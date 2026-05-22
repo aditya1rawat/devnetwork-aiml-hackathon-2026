@@ -19,7 +19,7 @@ describe("GatewayClient", () => {
     });
     const res = await gw.chat({ provider: "claude", model: "claude-x", messages: [], temperature: 0 });
     expect(res.text).toBe("hi");
-    expect(fetchMock.mock.calls[0]![0]).toBe("https://gw/v1/chat/completions");
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe("https://gw/v1/chat/completions");
   });
 
   it("throws GatewayError on 503", async () => {
@@ -49,7 +49,7 @@ describe("GatewayClient", () => {
     gw.setMode("direct");
     const res = await gw.chat({ provider: "claude", model: "claude-x", messages: [], temperature: 0 });
     expect(res.text).toBe("hi-direct");
-    expect(fetchMock.mock.calls[0]![0]).toBe("https://anth/v1/chat/completions");
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe("https://anth/v1/chat/completions");
   });
 
   it("blocked provider throws GatewayError", async () => {
