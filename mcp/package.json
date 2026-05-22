@@ -1,0 +1,25 @@
+{
+  "name": "@argus/mcp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p .",
+    "test": "vitest run",
+    "logs": "tsx src/logs.ts",
+    "metrics": "tsx src/metrics.ts",
+    "traces": "tsx src/traces.ts",
+    "runbook": "tsx src/runbook.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.23.8",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
