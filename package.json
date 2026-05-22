@@ -1,0 +1,19 @@
+{
+  "name": "argus",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @argus/web dev",
+    "dev:orch": "pnpm --filter @argus/orchestrator dev",
+    "dev:mcp": "pnpm --filter @argus/mcp dev",
+    "dev:cluster": "uv --directory services/mock-cluster run cluster",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}
