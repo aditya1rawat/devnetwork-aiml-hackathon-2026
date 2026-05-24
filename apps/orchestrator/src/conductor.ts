@@ -38,6 +38,7 @@ export async function runConductor(opts: ConductorOpts): Promise<IncidentState> 
   const s = createIncident(opts.incidentId, SYSTEM_PROMPT);
   const emit = opts.emit ?? (() => {});
   const timeoutMs = opts.stepTimeoutMs ?? 30_000;
+  let failoverBudget = 3;
 
   for (let step = 0; step < opts.maxSteps; step++) {
     emit({ type: "step_start", data: { step, primary: s.primary, shadow: s.shadow } });
@@ -51,6 +52,7 @@ export async function runConductor(opts: ConductorOpts): Promise<IncidentState> 
           model: modelFor(s.primary, opts),
           messages,
           temperature: 0,
+          maxTokens: 4096,
           responseFormat: "json_object",
         }),
         timeoutMs,
@@ -58,7 +60,8 @@ export async function runConductor(opts: ConductorOpts): Promise<IncidentState> 
     } catch (err) {
       emit({ type: "failover", data: { reason: "primary_error", error: (err as Error).message, from: s.primary, to: s.shadow } });
       if (opts.providers) opts.providers.markFailure(s.primary, Date.now());
-      if (s.shadow === null) {
+      failoverBudget -= 1;
+      if (s.shadow === null || failoverBudget <= 0) {
         finalize(s, "# Investigation halted\nBoth providers unavailable.");
         emit({ type: "incident_done", data: { report_md: s.finalReport } });
         return s;
@@ -68,7 +71,6 @@ export async function runConductor(opts: ConductorOpts): Promise<IncidentState> 
         const newShadow = pickNewShadow(s, opts.providers);
         s.shadow = newShadow;
       }
-      step--;
       continue;
     }
     emit({ type: "primary_step", data: { step, text: primaryRes.text, provider: s.primary, latencyMs: primaryRes.latencyMs } });

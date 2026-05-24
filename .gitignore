@@ -10,3 +10,7 @@ __pycache__
 .turbo
 .vercel
 *.log
+
+# session artifacts
+.playwright-mcp/
+incident-ui-*.png

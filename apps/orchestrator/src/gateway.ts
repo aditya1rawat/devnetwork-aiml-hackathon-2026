@@ -29,6 +29,7 @@ export interface GatewayClientOpts {
   gatewayKey: string;
   directKeys: Record<ProviderName, string>;
   directUrls: Record<ProviderName, string>;
+  providerMode?: Partial<Record<ProviderName, GatewayMode>>;
   fetch?: typeof fetch;
 }
 
@@ -80,9 +81,10 @@ export class GatewayClient {
     } catch (err) {
       throw new GatewayError(`network: ${(err as Error).message}`, 0, req.provider);
     }
+    const via = this.effectiveMode(req.provider);
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      if (this.mode === "gateway") {
+      if (via === "gateway") {
         this.gatewayFailures += 1;
         if (this.gatewayFailures >= 3 && this.opts.directKeys[req.provider]) {
           this.mode = "direct";
@@ -92,22 +94,28 @@ export class GatewayClient {
       throw new GatewayError(`status ${res.status}: ${text.slice(0, 200)}`, res.status, req.provider);
     }
     const json = (await res.json()) as {
-      choices: Array<{ message: { content: string } }>;
+      choices: Array<{ message: { content: string | null; reasoning?: string | null } }>;
     };
-    const text = json.choices[0]?.message?.content ?? "";
+    const msg = json.choices[0]?.message;
+    const text = (msg?.content ?? msg?.reasoning ?? "").trim();
     this.gatewayFailures = 0;
-    return { text, latencyMs: Date.now() - t0, provider: req.provider, via: this.mode };
+    return { text, latencyMs: Date.now() - t0, provider: req.provider, via };
+  }
+
+  private effectiveMode(provider: ProviderName): GatewayMode {
+    return this.opts.providerMode?.[provider] ?? this.mode;
   }
 
   private endpoint(provider: ProviderName): { url: string; headers: Record<string, string> } {
-    if (this.mode === "gateway") {
+    if (this.effectiveMode(provider) === "gateway") {
       return {
         url: this.opts.gatewayUrl,
         headers: { authorization: `Bearer ${this.opts.gatewayKey}` },
       };
     }
+    const url = (this.opts.directUrls[provider] ?? "").replace(/\/$/, "");
     return {
-      url: this.opts.directUrls[provider],
+      url,
       headers: { authorization: `Bearer ${this.opts.directKeys[provider]}` },
     };
   }

@@ -8,6 +8,7 @@ import { ProviderRegistry } from "./providers.js";
 
 const PORT = Number(process.env.PORT ?? 7200);
 
+const nemotronViaTfy = process.env.NEMOTRON_VIA_TFY === "1";
 const gateway = new GatewayClient({
   gatewayUrl: process.env.TRUEFOUNDRY_GATEWAY_URL ?? "https://app.truefoundry.com/api/llm/v1",
   gatewayKey: process.env.TRUEFOUNDRY_API_KEY ?? "",
@@ -19,6 +20,7 @@ const gateway = new GatewayClient({
     claude: "https://api.anthropic.com/v1",
     nemotron: process.env.CRUSOE_INFERENCE_URL ?? "",
   },
+  providerMode: nemotronViaTfy ? {} : { nemotron: "direct" },
 });
 
 if (!process.env.TRUEFOUNDRY_API_KEY) {
