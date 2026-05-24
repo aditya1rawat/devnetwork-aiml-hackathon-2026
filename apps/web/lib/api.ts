@@ -32,3 +32,47 @@ export async function restoreGateway() {
 export function streamUrl(id: string): string {
   return `${ORCH}/incident/${id}/stream`;
 }
+
+export interface DemoScenario {
+  id: string;
+  title: string;
+  blurb: string;
+  rootCause: string;
+  chaosType: string;
+  target: string;
+  params: Record<string, number>;
+  durationS: number;
+  warmupS: number;
+}
+
+export interface IncidentSummary {
+  id: string;
+  status: "running" | "failed_over" | "halted" | "resolved";
+  stepCount: number;
+  startedAt: number;
+  endedAt: number | null;
+  reportPreview: string;
+  scenario: string | null;
+  scenarioTitle: string | null;
+  failedOver: boolean;
+}
+
+export async function listScenarios(): Promise<DemoScenario[]> {
+  const r = await fetch(`${ORCH}/scenarios`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`scenarios ${r.status}`);
+  const j = (await r.json()) as { scenarios: DemoScenario[] };
+  return j.scenarios;
+}
+
+export async function startScenario(scenario: string): Promise<{ id: string }> {
+  const r = await fetch(`${ORCH}/scenarios/${scenario}/start`, { method: "POST" });
+  if (!r.ok) throw new Error(`scenario start ${r.status}`);
+  return (await r.json()) as { id: string };
+}
+
+export async function listIncidents(): Promise<IncidentSummary[]> {
+  const r = await fetch(`${ORCH}/incidents`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`incidents ${r.status}`);
+  const j = (await r.json()) as { incidents: IncidentSummary[] };
+  return j.incidents;
+}
