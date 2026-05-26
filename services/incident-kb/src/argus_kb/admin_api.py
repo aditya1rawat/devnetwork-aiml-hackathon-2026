@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from argus_kb.case_graph import fetch_case_subgraph
 from argus_kb.graph import clear_group, close_all, get_graphiti, get_neo4j_driver
-from argus_kb.ingest import IncidentBundle, schedule_ingest
+from argus_kb.ingest import IncidentBundle, build_episode_body, schedule_ingest
 from argus_kb.config import settings
 from argus_kb.report import fetch_incident_report
 
@@ -50,6 +50,39 @@ async def case_graph(incident_id: str) -> dict:
     if not subgraph["nodes"]:
         raise HTTPException(status_code=404, detail=f"incident {incident_id} not found in graph")
     return subgraph
+
+
+@app.post("/admin/incident/{incident_id}/refresh-content")
+async def refresh_episode_content(incident_id: str, bundle: IncidentBundle) -> dict:
+    """Replace an existing Episodic node's content + metadata in place.
+
+    Lets us iterate on the markdown the archive view displays without
+    re-running graphiti's entity extraction (slow + LLM-billed) or
+    perturbing the entity graph that search and case_graph depend on. The
+    Episodic node already exists from the original ingest; we only update
+    the human-readable surface.
+    """
+    name = f"incident:{incident_id}"
+    body = build_episode_body(bundle)
+    driver = await get_neo4j_driver()
+    cypher = """
+    MATCH (e:Episodic {name: $name, group_id: $gid})
+    SET e.content = $content, e.provenance = coalesce(e.provenance, $provenance)
+    RETURN count(e) AS updated
+    """
+    async with driver.session() as session:
+        result = await session.run(
+            cypher,
+            name=name,
+            gid=settings.graphiti_group_id,
+            content=body,
+            provenance=bundle.provenance,
+        )
+        record = await result.single()
+    updated = record["updated"] if record else 0
+    if updated == 0:
+        raise HTTPException(status_code=404, detail=f"no Episodic for {incident_id}")
+    return {"updated": updated}
 
 
 @app.get("/incidents")
