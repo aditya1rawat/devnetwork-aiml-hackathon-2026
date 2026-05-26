@@ -13,11 +13,14 @@ from argus_kb.config import settings
 from argus_kb.graph import get_neo4j_driver
 
 LABEL_TO_TYPE = {
+    "Episodic": "incident",  # the deterministic incident anchor (name="incident:<id>")
     "Incident": "incident",
     "Service": "service",
     "RootCause": "root_cause",
     "Remediation": "remediation",
 }
+
+EPISODE_PREFIX = "incident:"
 
 EDGE_LABEL = {
     "INVOLVES": "involves",
@@ -27,6 +30,17 @@ EDGE_LABEL = {
     "MENTIONS": "mentions",
     "RELATES_TO": "relates to",
 }
+
+
+def _jsonable(v: Any) -> Any:
+    """Coerce Neo4j-native types (DateTime, etc.) to JSON-serializable values."""
+    if isinstance(v, (str, int, float, bool)) or v is None:
+        return v
+    if isinstance(v, list):
+        return [_jsonable(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _jsonable(x) for k, x in v.items()}
+    return str(v)
 
 
 def _attrs(props: dict[str, Any]) -> dict[str, Any]:
@@ -52,19 +66,26 @@ def shape_for_react_flow(
         props: dict[str, Any] = n.get("props") or {}
         attrs = _attrs(props)
         typed = next((LABEL_TO_TYPE[l] for l in labels if l in LABEL_TO_TYPE), "other")
+        is_episode = "Episodic" in labels
+        name = props.get("name") or ""
+        # Episode nodes are named "incident:<id>"; derive the id + a clean label.
+        incident_id = name[len(EPISODE_PREFIX):] if is_episode and name.startswith(EPISODE_PREFIX) else attrs.get("incident_id")
         label = (
             props.get("title")
             or attrs.get("title")
-            or props.get("name")
+            or (incident_id if is_episode else None)
+            or name
             or props.get("summary")
-            or attrs.get("incident_id")
             or "untitled"
         )
+        meta = _jsonable({**props, **attrs})
+        if incident_id:
+            meta["incident_id"] = incident_id
         nodes_out.append({
             "id": n["id"],
             "type": typed,
             "label": label,
-            "meta": {**props, **attrs},
+            "meta": meta,
         })
 
     edges_out = []
@@ -81,10 +102,16 @@ def shape_for_react_flow(
 
 
 async def fetch_case_subgraph(incident_id: str) -> dict[str, Any]:
-    """Walk 2 hops out from the incident node whose name == incident_id."""
+    """Walk 2 hops out from the incident's Episodic anchor.
+
+    The Episodic node is named "incident:<id>" deterministically at ingest,
+    unlike extracted Incident entities whose names vary by LLM. Anchoring here
+    makes lookups reliable; 2 hops reaches mentioned entities and, through
+    shared services/causes, neighboring incidents.
+    """
     driver = await get_neo4j_driver()
     cypher = """
-    MATCH (i {name: $incident_id, group_id: $group_id})
+    MATCH (i:Episodic {name: $episode_name, group_id: $group_id})
     CALL apoc.path.subgraphAll(i, {maxLevel: 2})
     YIELD nodes, relationships
     RETURN
@@ -95,7 +122,7 @@ async def fetch_case_subgraph(incident_id: str) -> dict[str, Any]:
     async with driver.session() as session:
         result = await session.run(
             cypher,
-            incident_id=incident_id,
+            episode_name=f"{EPISODE_PREFIX}{incident_id}",
             group_id=settings.graphiti_group_id,
         )
         record = await result.single()
