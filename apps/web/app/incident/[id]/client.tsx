@@ -128,7 +128,7 @@ export function IncidentClient({ id }: { id: string }) {
           failoverStepNum={failoverStepNum}
         />
 
-        <ChaosPanel />
+        <ChaosPanel events={events} />
 
         <FinalReport events={events} />
       </div>

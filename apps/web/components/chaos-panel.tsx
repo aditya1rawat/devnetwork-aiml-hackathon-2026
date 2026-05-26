@@ -1,60 +1,141 @@
 "use client";
-import { useState } from "react";
-import { killProvider, restoreProvider, severGateway, restoreGateway } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { killProvider, restoreProvider, getOrchestratorState } from "@/lib/api";
+import type { StreamEvent } from "@/lib/types";
 
-type State = "live" | "killed";
+type ProviderName = "claude" | "nemotron";
 
-export function ChaosPanel() {
-  const [claude, setClaude] = useState<State>("live");
-  const [nemo, setNemo] = useState<State>("live");
-  const [gateway, setGateway] = useState<State>("live");
+interface PanelState {
+  claudeKilled: boolean;
+  claudeReason: "live" | "chaos" | "failover";
+  nemoKilled: boolean;
+  nemoReason: "live" | "chaos" | "failover";
+}
+
+const INITIAL: PanelState = {
+  claudeKilled: false,
+  claudeReason: "live",
+  nemoKilled: false,
+  nemoReason: "live",
+};
+
+export function ChaosPanel({ events }: { events: StreamEvent[] }) {
+  const [hydrated, setHydrated] = useState<PanelState | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getOrchestratorState()
+      .then((s) => {
+        if (!alive) return;
+        setHydrated({
+          claudeKilled: s.providers.claude.killed,
+          claudeReason: s.providers.claude.killed ? "chaos" : "live",
+          nemoKilled: s.providers.nemotron.killed,
+          nemoReason: s.providers.nemotron.killed ? "chaos" : "live",
+        });
+      })
+      .catch(() => {
+        if (alive) setHydrated(INITIAL);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const state = useMemo<PanelState>(() => {
+    const base = hydrated ?? INITIAL;
+    const next: PanelState = { ...base };
+    for (const e of events) {
+      if (e.type === "provider_state") {
+        const d = e.data as { provider?: ProviderName; killed?: boolean; reason?: string };
+        if (d.provider === "claude") {
+          next.claudeKilled = !!d.killed;
+          next.claudeReason = !d.killed
+            ? "live"
+            : d.reason === "failover"
+              ? "failover"
+              : "chaos";
+        } else if (d.provider === "nemotron") {
+          next.nemoKilled = !!d.killed;
+          next.nemoReason = !d.killed
+            ? "live"
+            : d.reason === "failover"
+              ? "failover"
+              : "chaos";
+        }
+      }
+    }
+    return next;
+  }, [events, hydrated]);
+
+  async function onToggleProvider(p: ProviderName, currentlyKilled: boolean) {
+    setPending(p);
+    try {
+      if (currentlyKilled) await restoreProvider(p);
+      else await killProvider(p);
+    } finally {
+      setPending(null);
+    }
+  }
 
   return (
     <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/40">
       <div className="flex items-baseline justify-between border-b border-[var(--color-border)] px-5 py-3">
         <span className="font-mono-label text-[var(--color-fg-dim)]">chaos controls</span>
-        <span className="font-serif-display text-[15px] italic text-[var(--color-fg-muted)]">inject failures, watch it survive</span>
+        <span className="font-serif-display text-[15px] italic text-[var(--color-fg-muted)]">
+          inject failures, watch it survive
+        </span>
       </div>
-      <div className="grid gap-2 px-4 py-3 sm:grid-cols-3">
+      <div className="grid gap-2 px-4 py-3 sm:grid-cols-2">
         <ChaosButton
           label="Claude"
-          state={claude}
+          killed={state.claudeKilled}
+          reason={state.claudeReason}
           accent="var(--color-primary)"
-          onToggle={async () => {
-            if (claude === "live") { await killProvider("claude"); setClaude("killed"); }
-            else { await restoreProvider("claude"); setClaude("live"); }
-          }}
+          pending={pending === "claude"}
+          onToggle={() => onToggleProvider("claude", state.claudeKilled)}
         />
         <ChaosButton
           label="Nemotron"
-          state={nemo}
+          killed={state.nemoKilled}
+          reason={state.nemoReason}
           accent="var(--color-shadow-prov)"
-          onToggle={async () => {
-            if (nemo === "live") { await killProvider("nemotron"); setNemo("killed"); }
-            else { await restoreProvider("nemotron"); setNemo("live"); }
-          }}
-        />
-        <ChaosButton
-          label="TFY Gateway"
-          state={gateway}
-          accent="var(--color-warn)"
-          onToggle={async () => {
-            if (gateway === "live") { await severGateway(); setGateway("killed"); }
-            else { await restoreGateway(); setGateway("live"); }
-          }}
+          pending={pending === "nemotron"}
+          onToggle={() => onToggleProvider("nemotron", state.nemoKilled)}
         />
       </div>
     </section>
   );
 }
 
-function ChaosButton({ label, state, accent, onToggle }: { label: string; state: State; accent: string; onToggle: () => void | Promise<void> }) {
-  const killed = state === "killed";
+function ChaosButton({
+  label,
+  killed,
+  reason,
+  accent,
+  pending,
+  onToggle,
+}: {
+  label: string;
+  killed: boolean;
+  reason: "live" | "chaos" | "failover";
+  accent: string;
+  pending: boolean;
+  onToggle: () => void | Promise<void>;
+}) {
+  const statusLabel = killed
+    ? reason === "failover"
+      ? "down · failover"
+      : "down"
+    : "live";
+  const cta = pending ? "…" : killed ? "restore" : "kill";
   return (
     <button
       type="button"
       onClick={onToggle}
-      className="group flex items-center justify-between rounded-lg border bg-[var(--color-bg)]/60 px-3 py-2.5 text-left transition-colors hover:bg-[var(--color-surface-2)]/60"
+      disabled={pending}
+      className="group flex items-center justify-between rounded-lg border bg-[var(--color-bg)]/60 px-3 py-2.5 text-left transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:cursor-not-allowed disabled:opacity-70"
       style={{ borderColor: killed ? "var(--color-danger)" : "var(--color-border)" }}
     >
       <div className="flex items-center gap-3.5">
@@ -64,7 +145,7 @@ function ChaosButton({ label, state, accent, onToggle }: { label: string; state:
         />
         <div className="flex flex-col leading-tight">
           <span className="text-[15px] font-light tracking-tight text-[var(--color-fg)]">{label}</span>
-          <span className="font-mono-label text-[var(--color-fg-dim)]">{killed ? "down" : "live"}</span>
+          <span className="font-mono-label text-[var(--color-fg-dim)]">{statusLabel}</span>
         </div>
       </div>
       <span
@@ -74,7 +155,7 @@ function ChaosButton({ label, state, accent, onToggle }: { label: string; state:
           color: killed ? "var(--color-success)" : "var(--color-danger)",
         }}
       >
-        {killed ? "restore" : "kill"}
+        {cta}
       </span>
     </button>
   );

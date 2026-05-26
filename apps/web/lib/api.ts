@@ -21,14 +21,6 @@ export async function restoreProvider(provider: "claude" | "nemotron") {
   });
 }
 
-export async function severGateway() {
-  await fetch(`${ORCH}/chaos/sever-gateway`, { method: "POST" });
-}
-
-export async function restoreGateway() {
-  await fetch(`${ORCH}/chaos/restore-gateway`, { method: "POST" });
-}
-
 export function streamUrl(id: string): string {
   return `${ORCH}/incident/${id}/stream`;
 }
@@ -68,6 +60,17 @@ export async function startScenario(scenario: string): Promise<{ id: string }> {
   const r = await fetch(`${ORCH}/scenarios/${scenario}/start`, { method: "POST" });
   if (!r.ok) throw new Error(`scenario start ${r.status}`);
   return (await r.json()) as { id: string };
+}
+
+export interface OrchestratorState {
+  providers: { claude: { killed: boolean }; nemotron: { killed: boolean } };
+  gateway: { mode: "gateway" | "direct" };
+}
+
+export async function getOrchestratorState(): Promise<OrchestratorState> {
+  const r = await fetch(`${ORCH}/state`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`state ${r.status}`);
+  return (await r.json()) as OrchestratorState;
 }
 
 export async function listIncidents(): Promise<IncidentSummary[]> {
