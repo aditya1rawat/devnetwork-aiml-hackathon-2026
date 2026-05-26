@@ -20,7 +20,7 @@ class IncidentEntity(BaseModel):
 class ServiceEntity(BaseModel):
     """A service in the cluster."""
 
-    name: str = Field(description="Service name: worker | db_proxy | auth | gateway | api")
+    service_name: str = Field(description="Service name: worker | db_proxy | auth | gateway | api")
 
 
 class RootCauseEntity(BaseModel):
@@ -29,7 +29,7 @@ class RootCauseEntity(BaseModel):
     category: str = Field(
         description="memleak | slow_query | cpu_saturation | config_drift | auth_failure | network_partition"
     )
-    summary: str = Field(description="One-sentence root cause")
+    description: str = Field(description="One-sentence root cause")
 
 
 class RemediationEntity(BaseModel):

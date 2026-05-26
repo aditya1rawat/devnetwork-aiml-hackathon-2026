@@ -20,12 +20,12 @@ def test_incident_entity_required_fields():
 
 
 def test_service_entity_minimal():
-    e = ServiceEntity(name="worker")
-    assert e.name == "worker"
+    e = ServiceEntity(service_name="worker")
+    assert e.service_name == "worker"
 
 
 def test_root_cause_entity():
-    e = RootCauseEntity(category="memleak", summary="Worker heap leaks 120MB/tick.")
+    e = RootCauseEntity(category="memleak", description="Worker heap leaks 120MB/tick.")
     assert e.category == "memleak"
 
 
