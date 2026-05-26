@@ -8,13 +8,25 @@ export class HttpMcpClient {
 
   async connect(): Promise<void> {
     const transport = new StreamableHTTPClientTransport(new URL(this.url));
-    this.client = new Client({ name: this.name, version: "0.1.0" }, { capabilities: {} });
-    await this.client.connect(transport);
+    const client = new Client({ name: this.name, version: "0.1.0" }, { capabilities: {} });
+    await client.connect(transport);
+    this.client = client;
   }
 
   async call(tool: string, args: Record<string, unknown>): Promise<unknown> {
-    if (!this.client) throw new Error(`http mcp client not connected: ${this.name}`);
-    const res = await this.client.callTool({ name: tool, arguments: args });
+    try {
+      return await this.invoke(tool, args);
+    } catch (err) {
+      // The KB service may have restarted, leaving this connection stale.
+      // Reconnect once and retry before surfacing the error.
+      try { await this.connect(); } catch { throw err; }
+      return this.invoke(tool, args);
+    }
+  }
+
+  private async invoke(tool: string, args: Record<string, unknown>): Promise<unknown> {
+    if (!this.client) await this.connect();
+    const res = await this.client!.callTool({ name: tool, arguments: args });
     // Prefer the parsed dict (structuredContent) so callers get typed data;
     // fall back to the text content blocks for tools that return plain text.
     return (res as { structuredContent?: unknown }).structuredContent ?? res.content;

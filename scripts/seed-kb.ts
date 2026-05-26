@@ -153,9 +153,22 @@ const SEEDS: Seed[] = [
 ];
 
 async function main(): Promise<void> {
+  // Optional args: incident ids (or substrings) to seed only those. Lets you
+  // drip-feed one at a time when the LLM provider's quota is tight:
+  //   pnpm seed-kb worker-oom-2025-q1-006
+  const filters = process.argv.slice(2);
+  const targets = filters.length
+    ? SEEDS.filter((s) => filters.some((f) => s.incident_id.includes(f)))
+    : SEEDS;
+
+  if (targets.length === 0) {
+    console.error(`no seeds match: ${filters.join(", ")}`);
+    process.exit(1);
+  }
+
   let ok = 0;
   let fail = 0;
-  for (const seed of SEEDS) {
+  for (const seed of targets) {
     process.stdout.write(`  -> ${seed.incident_id} ... `);
     try {
       const r = await fetch(`${ADMIN}/admin/ingest`, {
@@ -173,7 +186,7 @@ async function main(): Promise<void> {
     }
     await new Promise((res) => setTimeout(res, 5000));
   }
-  console.log(`\nseeded ${ok}/${SEEDS.length} incidents (${fail} failures)`);
+  console.log(`\nqueued ${ok}/${targets.length} incidents (${fail} post failures)`);
   if (fail > 0) process.exit(1);
 }
 

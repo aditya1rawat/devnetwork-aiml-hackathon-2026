@@ -19,6 +19,9 @@ log = logging.getLogger(__name__)
 VALID_SEVERITIES = {"sev1", "sev2", "sev3"}
 _RATE_LIMIT_RETRIES = 6
 _RATE_LIMIT_BACKOFF_S = 20.0
+# Gap between incidents so the provider's per-minute window fully clears
+# before the next incident's burst of extraction calls.
+_INTER_INCIDENT_DELAY_S = 15.0
 
 
 class IncidentBundle(BaseModel):
@@ -63,11 +66,41 @@ def build_episode_body(b: IncidentBundle) -> str:
     return "\n".join(lines)
 
 
-_background_tasks: set[asyncio.Task] = set()
+_queue: "asyncio.Queue[tuple[IncidentBundle, str]] | None" = None
+_worker_task: asyncio.Task | None = None
+
+
+def _ensure_worker() -> "asyncio.Queue[tuple[IncidentBundle, str]]":
+    global _queue, _worker_task
+    if _queue is None:
+        _queue = asyncio.Queue()
+    if _worker_task is None or _worker_task.done():
+        _worker_task = asyncio.create_task(_worker())
+    return _queue
+
+
+async def _worker() -> None:
+    """Process ingests strictly one at a time.
+
+    Concurrent ingests saturate Gemini's per-minute window and starve each
+    other into endless retries. Serializing lets the window drain between
+    incidents so each extraction completes.
+    """
+    assert _queue is not None
+    while True:
+        bundle, job_id = await _queue.get()
+        try:
+            await _run_ingest(bundle, job_id)
+        except Exception as e:  # worker must never die
+            log.error("worker error on %s job=%s: %s", bundle.incident_id, job_id, e)
+        finally:
+            _queue.task_done()
+        if not _queue.empty():
+            await asyncio.sleep(_INTER_INCIDENT_DELAY_S)
 
 
 def schedule_ingest(b: IncidentBundle) -> str:
-    """Validate synchronously, then run extraction in the background.
+    """Validate synchronously, then enqueue for the single-worker pipeline.
 
     Returns a job id immediately so the HTTP caller never blocks on the
     (slow, rate-limited) graphiti extraction. Validation errors still surface
@@ -75,9 +108,8 @@ def schedule_ingest(b: IncidentBundle) -> str:
     """
     validate_bundle(b)
     job_id = f"ingest-{uuid.uuid4().hex[:12]}"
-    task = asyncio.create_task(_run_ingest(b, job_id))
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+    queue = _ensure_worker()
+    queue.put_nowait((b, job_id))
     return job_id
 
 
@@ -102,13 +134,16 @@ async def _run_ingest(b: IncidentBundle, job_id: str) -> None:
             )
             log.info("ingest done: incident=%s job=%s", b.incident_id, job_id)
             return
-        except RateLimitError:
-            if attempt == _RATE_LIMIT_RETRIES - 1:
-                log.error("ingest failed (rate limit) for %s job=%s", b.incident_id, job_id)
+        except Exception as e:
+            # Retry transient provider errors: 429 rate limit and 503/overload
+            # spikes both clear on their own. Validation already ran, so any
+            # error here is from the LLM call.
+            transient = isinstance(e, RateLimitError) or any(
+                tok in str(e).lower() for tok in ("503", "unavailable", "overload", "rate limit", "429")
+            )
+            if attempt == _RATE_LIMIT_RETRIES - 1 or not transient:
+                log.error("ingest failed for %s job=%s: %s", b.incident_id, job_id, e)
                 return
             wait = _RATE_LIMIT_BACKOFF_S * (attempt + 1)
-            log.warning("gemini rate limit on %s, retry %d after %.0fs", b.incident_id, attempt + 1, wait)
+            log.warning("transient error on %s, retry %d after %.0fs: %s", b.incident_id, attempt + 1, wait, str(e)[:80])
             await asyncio.sleep(wait)
-        except Exception as e:
-            log.error("ingest failed for %s job=%s: %s", b.incident_id, job_id, e)
-            return
