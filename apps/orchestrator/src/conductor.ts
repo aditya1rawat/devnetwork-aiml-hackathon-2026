@@ -17,6 +17,7 @@ export interface ConductorEvent {
     | "divergence"
     | "failover"
     | "gateway_mode"
+    | "provider_state"
     | "incident_done";
   data: Record<string, unknown>;
 }
@@ -42,7 +43,8 @@ export async function runConductor(opts: ConductorOpts): Promise<IncidentState> 
 
   for (let step = 0; step < opts.maxSteps; step++) {
     emit({ type: "step_start", data: { step, primary: s.primary, shadow: s.shadow } });
-    const messages = buildMessages(s);
+    const isFinalStep = step === opts.maxSteps - 1;
+    const messages = buildMessages(s, isFinalStep);
 
     let primaryRes;
     try {
@@ -59,6 +61,7 @@ export async function runConductor(opts: ConductorOpts): Promise<IncidentState> 
       );
     } catch (err) {
       emit({ type: "failover", data: { reason: "primary_error", error: (err as Error).message, from: s.primary, to: s.shadow } });
+      emit({ type: "provider_state", data: { provider: s.primary, killed: true, reason: "failover" } });
       if (opts.providers) opts.providers.markFailure(s.primary, Date.now());
       failoverBudget -= 1;
       if (s.shadow === null || failoverBudget <= 0) {
@@ -142,12 +145,15 @@ function modelFor(provider: ProviderName, opts: ConductorOpts): string {
   return provider === "claude" ? opts.primaryModel : opts.shadowModel;
 }
 
-function buildMessages(s: IncidentState) {
+function buildMessages(s: IncidentState, finalStep = false) {
+  const nudge = finalStep
+    ? `\n\nThis is your FINAL allowed step. You MUST reply with action="report" and a markdown summary in args.markdown covering: most likely root cause, supporting evidence from your investigation, and recommended remediation. Do not call any other tool.`
+    : "";
   return [
     { role: "system" as const, content: s.messages[0]!.content },
     {
       role: "user" as const,
-      content: `Current incident: ${s.id}.\nHistory so far:\n${renderHistory(s) || "(no steps yet)"}\n\nDecide your next single action and reply with a JSON object.`,
+      content: `Current incident: ${s.id}.\nHistory so far:\n${renderHistory(s) || "(no steps yet)"}\n\nDecide your next single action and reply with a JSON object.${nudge}`,
     },
     ...s.messages.slice(1),
   ];

@@ -69,6 +69,16 @@ export function buildApp(deps: AppDeps) {
 
   app.get("/health", (c) => c.json({ ok: true }));
 
+  app.get("/state", (c) =>
+    c.json({
+      providers: {
+        claude: { killed: deps.chaosState.killClaude },
+        nemotron: { killed: deps.chaosState.killNemotron },
+      },
+      gateway: { mode: deps.chaosState.gatewayDown ? "direct" : "gateway" },
+    }),
+  );
+
   // CORS for the web app
   app.use("*", async (c, next) => {
     c.res.headers.set("access-control-allow-origin", "*");
@@ -95,7 +105,7 @@ export function buildApp(deps: AppDeps) {
       incidentId: id,
       primaryModel: process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6",
       shadowModel: process.env.NEMOTRON_MODEL ?? "nvidia/nemotron",
-      maxSteps: 12,
+      maxSteps: 18,
       enableShadow: true,
       providers: deps.registry,
       emit: (e) => {
@@ -205,11 +215,23 @@ export function buildApp(deps: AppDeps) {
     }),
   );
 
+  function broadcast(e: ConductorEvent): void {
+    for (const entry of incidents.values()) {
+      entry.events.push(e);
+      for (const fn of entry.subs) fn(e);
+    }
+  }
+
+  function broadcastProviderState(provider: "claude" | "nemotron", killed: boolean, reason: string): void {
+    broadcast({ type: "provider_state", data: { provider, killed, reason } });
+  }
+
   app.post("/chaos/kill-provider", async (c) => {
     const body = await c.req.json<{ provider: "claude" | "nemotron" }>();
     if (body.provider === "claude") deps.chaosState.killClaude = true;
     if (body.provider === "nemotron") deps.chaosState.killNemotron = true;
     deps.gateway.setProviderBlocked(body.provider, true);
+    broadcastProviderState(body.provider, true, "chaos");
     return c.json({ ok: true });
   });
 
@@ -218,15 +240,12 @@ export function buildApp(deps: AppDeps) {
     if (body.provider === "claude") deps.chaosState.killClaude = false;
     if (body.provider === "nemotron") deps.chaosState.killNemotron = false;
     deps.gateway.setProviderBlocked(body.provider, false);
+    broadcastProviderState(body.provider, false, "chaos");
     return c.json({ ok: true });
   });
 
   function broadcastGatewayMode(mode: "gateway" | "direct"): void {
-    for (const entry of incidents.values()) {
-      const e: ConductorEvent = { type: "gateway_mode", data: { mode } };
-      entry.events.push(e);
-      for (const fn of entry.subs) fn(e);
-    }
+    broadcast({ type: "gateway_mode", data: { mode } });
   }
 
   app.post("/chaos/sever-gateway", async (c) => {
