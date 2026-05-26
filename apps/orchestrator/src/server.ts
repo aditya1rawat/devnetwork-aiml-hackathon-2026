@@ -5,6 +5,7 @@ import { McpPool } from "./mcp-pool.js";
 import { runConductor, type ConductorEvent } from "./conductor.js";
 import { ProviderRegistry } from "./providers.js";
 import { IncidentKbClient } from "./incident-kb-client.js";
+import { saveIncident, loadAllIncidents, type PersistedIncident } from "./incident-store.js";
 
 interface AppDeps {
   gateway: GatewayClient;
@@ -16,6 +17,9 @@ interface AppDeps {
     gatewayDown: boolean;
   };
   kb: IncidentKbClient | null;
+  /** Previously-persisted incidents to rehydrate on boot. Loaded by the
+   * entrypoint via {@link loadAllIncidents} before app construction. */
+  preloaded?: PersistedIncident[];
 }
 
 interface DemoScenario {
@@ -55,19 +59,32 @@ const DEMO_SCENARIOS: Record<string, DemoScenario> = {
   },
 };
 
+type IncidentEntry = {
+  events: ConductorEvent[];
+  subs: Array<(e: ConductorEvent, idx: number) => void>;
+  done: boolean;
+  startedAt: number;
+  endedAt?: number;
+  scenario?: string;
+};
+
 export function buildApp(deps: AppDeps) {
   const app = new Hono();
-  const incidents = new Map<
-    string,
-    {
-      events: ConductorEvent[];
-      subs: Array<(e: ConductorEvent) => void>;
-      done: boolean;
-      startedAt: number;
-      endedAt?: number;
-      scenario?: string;
-    }
-  >();
+  const incidents = new Map<string, IncidentEntry>();
+
+  // Rehydrate any previously-persisted runs so a restart doesn't drop the
+  // live view for incidents the user investigated earlier. New SSE connections
+  // resubscribe via the standard sub list (empty on load).
+  for (const p of deps.preloaded ?? []) {
+    incidents.set(p.id, {
+      events: p.events,
+      subs: [],
+      done: p.done,
+      startedAt: p.startedAt,
+      endedAt: p.endedAt,
+      scenario: p.scenario,
+    });
+  }
 
   app.get("/health", (c) => c.json({ ok: true }));
 
@@ -142,13 +159,14 @@ export function buildApp(deps: AppDeps) {
       resolved_at: new Date().toISOString(),
       services_touched: servicesTouched,
       tool_log_digest: toolLogDigest,
+      provenance: "argus" as const,
     };
   }
 
   function spawnIncident(id: string, scenario?: string) {
     const entry = {
       events: [] as ConductorEvent[],
-      subs: [] as Array<(e: ConductorEvent) => void>,
+      subs: [] as Array<(e: ConductorEvent, idx: number) => void>,
       done: false,
       startedAt: Date.now(),
       endedAt: undefined as number | undefined,
@@ -167,21 +185,50 @@ export function buildApp(deps: AppDeps) {
       providers: deps.registry,
       emit: (e) => {
         entry.events.push(e);
-        for (const fn of entry.subs) fn(e);
+        const idx = entry.events.length - 1;
+        for (const fn of entry.subs) fn(e, idx);
         if (e.type === "incident_done") {
           entry.done = true;
           entry.endedAt = Date.now();
+          // Persist before triggering KB ingest so a crash mid-ingest still
+          // leaves the live view recoverable.
+          saveIncident({
+            id,
+            events: entry.events,
+            done: true,
+            startedAt: entry.startedAt,
+            endedAt: entry.endedAt,
+            scenario: entry.scenario,
+          }).catch((err: unknown) => {
+            console.warn(`[argus] failed to persist incident ${id}: ${(err as Error).message}`);
+          });
           const status = statusFromEvents(entry.events);
           if (status === "resolved" && deps.kb) {
-            const bundle = buildBundle(id, entry.scenario, entry.events);
-            deps.kb.ingest(bundle).then(
-              (res) => {
-                const evt: ConductorEvent = { type: "kb_ingest_queued", data: { job_id: res.job_id } };
-                entry.events.push(evt);
-                for (const fn of entry.subs) fn(evt);
+            // Skip re-ingest if this id is already in the KB (e.g., someone
+            // ran an investigation against a seeded incident id). The archive
+            // view will surface the original record instead.
+            const kb = deps.kb;
+            kb.getReport(id).then(
+              (existing) => {
+                if (existing !== null) {
+                  console.log(`[argus] skip kb ingest for ${id}: already in knowledge base`);
+                  return;
+                }
+                const bundle = buildBundle(id, entry.scenario, entry.events);
+                kb.ingest(bundle).then(
+                  (res) => {
+                    const evt: ConductorEvent = { type: "kb_ingest_queued", data: { job_id: res.job_id } };
+                    entry.events.push(evt);
+                    const idx2 = entry.events.length - 1;
+                    for (const fn of entry.subs) fn(evt, idx2);
+                  },
+                  (err: unknown) => {
+                    console.warn(`[argus] kb ingest failed for ${id}: ${(err as Error).message}`);
+                  },
+                );
               },
               (err: unknown) => {
-                console.warn(`[argus] kb ingest failed for ${id}: ${(err as Error).message}`);
+                console.warn(`[argus] kb dedup check failed for ${id}, skipping ingest: ${(err as Error).message}`);
               },
             );
           }
@@ -191,7 +238,8 @@ export function buildApp(deps: AppDeps) {
       const errMsg = err instanceof Error ? err.message : String(err);
       const e: ConductorEvent = { type: "incident_done", data: { error: errMsg } };
       entry.events.push(e);
-      for (const fn of entry.subs) fn(e);
+      const idx = entry.events.length - 1;
+      for (const fn of entry.subs) fn(e, idx);
       entry.done = true;
       entry.endedAt = Date.now();
     });
@@ -268,13 +316,18 @@ export function buildApp(deps: AppDeps) {
         await stream.writeSSE({ event: "error", data: JSON.stringify({ error: "not_found" }) });
         return;
       }
-      for (const e of entry.events) {
-        await stream.writeSSE({ event: e.type, data: JSON.stringify(e.data) });
+      // EventSource auto-reconnects on transient drops; resume from the last
+      // event the client received so we don't replay duplicates.
+      const lastIdStr = c.req.header("Last-Event-ID");
+      const lastId = lastIdStr !== undefined && /^\d+$/.test(lastIdStr) ? Number(lastIdStr) : -1;
+      for (let i = lastId + 1; i < entry.events.length; i++) {
+        const e = entry.events[i]!;
+        await stream.writeSSE({ event: e.type, id: String(i), data: JSON.stringify(e.data) });
       }
       if (entry.done) return;
       await new Promise<void>((resolve) => {
-        const fn = (e: ConductorEvent) => {
-          stream.writeSSE({ event: e.type, data: JSON.stringify(e.data) }).catch(() => {});
+        const fn = (e: ConductorEvent, idx: number) => {
+          stream.writeSSE({ event: e.type, id: String(idx), data: JSON.stringify(e.data) }).catch(() => {});
           if (e.type === "incident_done") {
             const i = entry.subs.indexOf(fn);
             if (i >= 0) entry.subs.splice(i, 1);
@@ -289,7 +342,8 @@ export function buildApp(deps: AppDeps) {
   function broadcast(e: ConductorEvent): void {
     for (const entry of incidents.values()) {
       entry.events.push(e);
-      for (const fn of entry.subs) fn(e);
+      const idx = entry.events.length - 1;
+      for (const fn of entry.subs) fn(e, idx);
     }
   }
 
@@ -331,6 +385,28 @@ export function buildApp(deps: AppDeps) {
     deps.gateway.setMode("gateway");
     broadcastGatewayMode("gateway");
     return c.json({ ok: true });
+  });
+
+  app.get("/incidents/historical", async (c) => {
+    if (!deps.kb) return c.json({ incidents: [] });
+    try {
+      const items = await deps.kb.listIncidents("historical");
+      return c.json({ incidents: items });
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 502);
+    }
+  });
+
+  app.get("/incident/:id/report", async (c) => {
+    if (!deps.kb) return c.json({ error: "kb unavailable" }, 503);
+    const id = c.req.param("id");
+    try {
+      const report = await deps.kb.getReport(id);
+      if (report === null) return c.json({ error: "not in kb" }, 404);
+      return c.json(report);
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 502);
+    }
   });
 
   app.get("/incident/:id/case-graph", async (c) => {

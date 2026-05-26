@@ -11,7 +11,7 @@ from graphiti_core.nodes import EpisodeType
 from pydantic import BaseModel
 
 from argus_kb.config import settings
-from argus_kb.graph import get_graphiti
+from argus_kb.graph import get_graphiti, get_neo4j_driver
 from argus_kb.ontology import ENTITY_TYPES
 
 log = logging.getLogger(__name__)
@@ -34,6 +34,9 @@ class IncidentBundle(BaseModel):
     resolved_at: str
     services_touched: list[str]
     tool_log_digest: str
+    # "argus" = investigated live by this system, full event log exists.
+    # "historical" = pre-Argus case, only the report + entity graph survive.
+    provenance: str = "argus"
 
 
 def validate_bundle(b: IncidentBundle) -> None:
@@ -113,6 +116,18 @@ def schedule_ingest(b: IncidentBundle) -> str:
     return job_id
 
 
+async def _set_episode_provenance(episode_name: str, provenance: str) -> None:
+    """Tag the freshest Episodic node sharing ``episode_name`` with the given provenance."""
+    driver = await get_neo4j_driver()
+    cypher = """
+    MATCH (e:Episodic {name: $name, group_id: $gid})
+    WITH e ORDER BY e.created_at DESC LIMIT 1
+    SET e.provenance = $provenance
+    """
+    async with driver.session() as session:
+        await session.run(cypher, name=episode_name, gid=settings.graphiti_group_id, provenance=provenance)
+
+
 async def _run_ingest(b: IncidentBundle, job_id: str) -> None:
     g = await get_graphiti()
     name = f"incident:{b.incident_id}"
@@ -132,7 +147,12 @@ async def _run_ingest(b: IncidentBundle, job_id: str) -> None:
                 group_id=settings.graphiti_group_id,
                 entity_types=ENTITY_TYPES,
             )
-            log.info("ingest done: incident=%s job=%s", b.incident_id, job_id)
+            # graphiti's add_episode owns Episodic node creation, so we tag
+            # provenance separately afterward. Lets the report endpoint /
+            # archive view distinguish Argus-resolved vs pre-Argus cases
+            # without parsing it out of the body string.
+            await _set_episode_provenance(name, b.provenance)
+            log.info("ingest done: incident=%s job=%s provenance=%s", b.incident_id, job_id, b.provenance)
             return
         except Exception as e:
             # Retry transient provider errors: 429 rate limit and 503/overload

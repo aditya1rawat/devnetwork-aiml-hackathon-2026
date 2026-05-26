@@ -7,6 +7,7 @@ import { StdioMcpClients } from "./mcp-stdio.js";
 import { HttpMcpClient } from "./mcp-http.js";
 import { IncidentKbClient } from "./incident-kb-client.js";
 import { ProviderRegistry } from "./providers.js";
+import { loadAllIncidents } from "./incident-store.js";
 
 const PORT = Number(process.env.PORT ?? 7200);
 
@@ -63,7 +64,9 @@ const pool = new McpPool({
 const registry = new ProviderRegistry(["claude", "nemotron"], { quarantineMs: 60_000 });
 const chaosState = { killClaude: false, killNemotron: false, gatewayDown: false };
 
-const { app } = buildApp({ gateway, pool, registry, chaosState, kb: kbAdmin });
+const preloaded = await loadAllIncidents();
+if (preloaded.length > 0) console.log(`[argus] rehydrated ${preloaded.length} incident(s) from disk`);
+const { app } = buildApp({ gateway, pool, registry, chaosState, kb: kbAdmin, preloaded });
 
 serve({ fetch: app.fetch, port: PORT }, ({ port }) => {
   console.log(`[argus] orchestrator on :${port}`);

@@ -8,6 +8,7 @@ export interface IncidentBundle {
   resolved_at: string;
   services_touched: string[];
   tool_log_digest: string;
+  provenance?: "argus" | "historical";
 }
 
 export interface CaseGraphNode {
@@ -28,6 +29,21 @@ export interface CaseGraph {
   nodes: CaseGraphNode[];
   edges: CaseGraphEdge[];
   focus_id: string;
+}
+
+export interface StoredIncidentReport {
+  incident_id: string;
+  title?: string;
+  severity?: string;
+  scenario?: string | null;
+  failed_over?: boolean;
+  resolved_at?: string;
+  services_touched?: string[];
+  tool_log_digest?: string;
+  report_md: string;
+  valid_at?: string;
+  created_at?: string;
+  source_description?: string;
 }
 
 export class IncidentKbClient {
@@ -52,5 +68,32 @@ export class IncidentKbClient {
     const r = await fetch(`${this.adminUrl}/case-graph/${encodeURIComponent(incidentId)}`);
     if (!r.ok) throw new Error(`kb caseGraph failed: ${r.status}`);
     return (await r.json()) as CaseGraph;
+  }
+
+  /** Returns the stored report, or null if the incident isn't in the KB. */
+  async getReport(incidentId: string): Promise<StoredIncidentReport | null> {
+    const r = await fetch(`${this.adminUrl}/incident/${encodeURIComponent(incidentId)}/report`);
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error(`kb getReport failed: ${r.status}`);
+    return (await r.json()) as StoredIncidentReport;
+  }
+
+  async listIncidents(provenance?: "argus" | "historical"): Promise<StoredIncidentReport[]> {
+    const url = new URL(`${this.adminUrl}/incidents`);
+    if (provenance) url.searchParams.set("provenance", provenance);
+    const r = await fetch(url.toString());
+    if (!r.ok) throw new Error(`kb listIncidents failed: ${r.status}`);
+    const j = (await r.json()) as { incidents: StoredIncidentReport[] };
+    return j.incidents;
+  }
+
+  async backfillProvenance(historical: string[]): Promise<{ tagged: number; historical: number; argus: number }> {
+    const r = await fetch(`${this.adminUrl}/admin/backfill-provenance`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ historical }),
+    });
+    if (!r.ok) throw new Error(`kb backfill failed: ${r.status} ${await r.text()}`);
+    return (await r.json()) as { tagged: number; historical: number; argus: number };
   }
 }

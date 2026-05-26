@@ -2,12 +2,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { listScenarios, listIncidents, startScenario, type DemoScenario, type IncidentSummary } from "@/lib/api";
+import { listScenarios, listIncidents, listHistoricalIncidents, startScenario, type DemoScenario, type HistoricalIncident, type IncidentSummary } from "@/lib/api";
 
 export function IncidentsClient() {
   const router = useRouter();
   const [scenarios, setScenarios] = useState<DemoScenario[] | null>(null);
   const [incidents, setIncidents] = useState<IncidentSummary[] | null>(null);
+  const [historical, setHistorical] = useState<HistoricalIncident[] | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -30,6 +31,16 @@ export function IncidentsClient() {
     return () => {
       stop = true;
       clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    listHistoricalIncidents().then((items) => {
+      if (alive) setHistorical(items);
+    });
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -76,7 +87,7 @@ export function IncidentsClient() {
 
         <section className="space-y-4">
           <div className="flex items-baseline justify-between">
-            <SectionLabel label="past runs" />
+            <SectionLabel label="argus-resolved · past runs" />
             <span className="font-mono-meta tnum text-[var(--color-fg-dim)]">
               {incidents === null ? "…" : `${incidents.length} total`}
             </span>
@@ -89,6 +100,26 @@ export function IncidentsClient() {
             <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/40">
               {incidents.map((i) => (
                 <IncidentRow key={i.id} incident={i} />
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-baseline justify-between">
+            <SectionLabel label="historical · pre-argus cases" />
+            <span className="font-mono-meta tnum text-[var(--color-fg-dim)]">
+              {historical === null ? "…" : `${historical.length} in kb`}
+            </span>
+          </div>
+          {historical === null ? (
+            <p className="font-mono-meta text-[var(--color-fg-dim)]">loading…</p>
+          ) : historical.length === 0 ? (
+            <p className="font-mono-meta text-[var(--color-fg-dim)]">no historical cases in the knowledge base.</p>
+          ) : (
+            <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/40">
+              {historical.map((h) => (
+                <HistoricalRow key={h.incident_id} incident={h} />
               ))}
             </ul>
           )}
@@ -201,6 +232,45 @@ function IncidentRow({ incident }: { incident: IncidentSummary }) {
         ) : null}
         {incident.reportPreview ? (
           <p className="text-[13.5px] font-light leading-[1.5] text-[var(--color-fg-muted)] line-clamp-2">{firstLine(incident.reportPreview)}</p>
+        ) : null}
+      </Link>
+    </li>
+  );
+}
+
+function HistoricalRow({ incident }: { incident: HistoricalIncident }) {
+  const services = (incident.services_touched ?? []).join(" · ");
+  return (
+    <li>
+      <Link
+        href={`/incident/${incident.incident_id}`}
+        className="group flex flex-col gap-2 px-5 py-4 transition-colors hover:bg-[var(--color-surface)]/70"
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-baseline gap-3">
+            <span className="inline-block h-1.5 w-1.5 translate-y-[-1px] rounded-full bg-[var(--color-fg-dim)]" />
+            <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-[var(--color-fg-dim)]">
+              historical
+            </span>
+            {incident.severity ? (
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-[var(--color-fg-dim)]">
+                · {incident.severity}
+              </span>
+            ) : null}
+            {services ? (
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-[var(--color-fg-dim)]">
+                · {services}
+              </span>
+            ) : null}
+          </div>
+          <span className="font-mono text-[11.5px] text-[var(--color-fg-dim)] transition-colors group-hover:text-[var(--color-fg)]">
+            {incident.incident_id} ↗
+          </span>
+        </div>
+        {incident.title ? (
+          <p className="font-serif-display text-[15.5px] italic text-[var(--color-fg-muted)]">
+            {incident.title}
+          </p>
         ) : null}
       </Link>
     </li>

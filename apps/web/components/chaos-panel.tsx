@@ -24,6 +24,10 @@ export function ChaosPanel({ events }: { events: StreamEvent[] }) {
   const [pending, setPending] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [resetting, setResetting] = useState(false);
+  // Once the incident has finished, the provider kill buttons would only
+  // affect *future* runs — confusing on a page that already shows a final
+  // report. Disable them; KB reset stays available globally.
+  const isDone = events.some((e) => e.type === "incident_done");
 
   async function onResetKB() {
     setResetting(true);
@@ -106,6 +110,7 @@ export function ChaosPanel({ events }: { events: StreamEvent[] }) {
           reason={state.claudeReason}
           accent="var(--color-primary)"
           pending={pending === "claude"}
+          disabled={isDone}
           onToggle={() => onToggleProvider("claude", state.claudeKilled)}
         />
         <ChaosButton
@@ -114,6 +119,7 @@ export function ChaosPanel({ events }: { events: StreamEvent[] }) {
           reason={state.nemoReason}
           accent="var(--color-shadow-prov)"
           pending={pending === "nemotron"}
+          disabled={isDone}
           onToggle={() => onToggleProvider("nemotron", state.nemoKilled)}
         />
         <button
@@ -178,6 +184,7 @@ function ChaosButton({
   reason,
   accent,
   pending,
+  disabled,
   onToggle,
 }: {
   label: string;
@@ -185,20 +192,23 @@ function ChaosButton({
   reason: "live" | "chaos" | "failover";
   accent: string;
   pending: boolean;
+  disabled?: boolean;
   onToggle: () => void | Promise<void>;
 }) {
-  const statusLabel = killed
-    ? reason === "failover"
-      ? "down · failover"
-      : "down"
-    : "live";
-  const cta = pending ? "…" : killed ? "restore" : "kill";
+  const statusLabel = disabled
+    ? "investigation done"
+    : killed
+      ? reason === "failover"
+        ? "down · failover"
+        : "down"
+      : "live";
+  const cta = pending ? "…" : disabled ? "—" : killed ? "restore" : "kill";
   return (
     <button
       type="button"
       onClick={onToggle}
-      disabled={pending}
-      className="group flex items-center justify-between rounded-lg border bg-[var(--color-bg)]/60 px-3 py-2.5 text-left transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:cursor-not-allowed disabled:opacity-70"
+      disabled={pending || disabled}
+      className="group flex items-center justify-between rounded-lg border bg-[var(--color-bg)]/60 px-3 py-2.5 text-left transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:cursor-not-allowed disabled:opacity-50"
       style={{ borderColor: killed ? "var(--color-danger)" : "var(--color-border)" }}
     >
       <div className="flex items-center gap-3.5">

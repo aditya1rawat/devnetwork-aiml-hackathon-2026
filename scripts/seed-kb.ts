@@ -11,6 +11,7 @@ interface Seed {
   resolved_at: string;
   services_touched: string[];
   tool_log_digest: string;
+  provenance?: "argus" | "historical";
 }
 
 function daysAgo(n: number): string {
@@ -174,7 +175,7 @@ async function main(): Promise<void> {
       const r = await fetch(`${ADMIN}/admin/ingest`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(seed),
+        body: JSON.stringify({ ...seed, provenance: seed.provenance ?? "historical" }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
       const j = (await r.json()) as { job_id: string };

@@ -107,6 +107,53 @@ export async function getCaseGraph(id: string): Promise<CaseGraph | null> {
   return (await r.json()) as CaseGraph;
 }
 
+export interface StoredIncidentReport {
+  incident_id: string;
+  title?: string;
+  severity?: string;
+  scenario?: string | null;
+  failed_over?: boolean;
+  resolved_at?: string;
+  services_touched?: string[];
+  tool_log_digest?: string;
+  report_md: string;
+  valid_at?: string;
+  created_at?: string;
+  source_description?: string;
+  /** "argus" = investigated live by this system; "historical" = pre-Argus. */
+  provenance?: "argus" | "historical" | string;
+}
+
+export async function getStoredIncidentReport(id: string): Promise<StoredIncidentReport | null> {
+  const r = await fetch(`${ORCH}/incident/${id}/report`, { cache: "no-store" });
+  if (r.status === 404 || r.status === 503) return null;
+  if (!r.ok) throw new Error(`stored-report ${r.status}`);
+  return (await r.json()) as StoredIncidentReport;
+}
+
+export async function isIncidentLive(id: string): Promise<boolean> {
+  const list = await listIncidents();
+  return list.some((i) => i.id === id);
+}
+
+export interface HistoricalIncident {
+  incident_id: string;
+  title?: string;
+  severity?: string;
+  scenario?: string | null;
+  failed_over?: boolean;
+  services_touched?: string[];
+  resolved_at?: string;
+  provenance: string;
+}
+
+export async function listHistoricalIncidents(): Promise<HistoricalIncident[]> {
+  const r = await fetch(`${ORCH}/incidents/historical`, { cache: "no-store" });
+  if (!r.ok) return [];
+  const j = (await r.json()) as { incidents: HistoricalIncident[] };
+  return j.incidents ?? [];
+}
+
 export async function resetKB(): Promise<void> {
   const r = await fetch(`${ORCH}/admin/kb/reset`, { method: "POST" });
   if (!r.ok) throw new Error(`reset kb ${r.status}`);
