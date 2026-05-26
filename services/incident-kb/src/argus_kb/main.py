@@ -7,6 +7,9 @@ from argus_kb.config import settings
 
 
 def _run_admin() -> None:
+    # Spawned child process: re-init logging so module INFO logs (ingest
+    # progress) are visible, not just uvicorn's own output.
+    logging.basicConfig(level=logging.INFO)
     uvicorn.run(
         "argus_kb.admin_api:app",
         host="0.0.0.0",
@@ -16,6 +19,7 @@ def _run_admin() -> None:
 
 
 def _run_mcp() -> None:
+    logging.basicConfig(level=logging.INFO)
     from argus_kb.mcp_server import run_mcp
 
     run_mcp()

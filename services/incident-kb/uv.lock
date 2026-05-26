@@ -38,12 +38,11 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
-    { name = "google-genai" },
     { name = "graphiti-core" },
-    { name = "groq" },
     { name = "httpx" },
     { name = "mcp" },
     { name = "neo4j" },
+    { name = "openai" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "sentence-transformers" },
@@ -59,12 +58,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "google-genai", specifier = ">=0.3.0" },
     { name = "graphiti-core", specifier = ">=0.3.0" },
-    { name = "groq", specifier = ">=0.11.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "mcp", specifier = ">=1.0.0" },
     { name = "neo4j", specifier = ">=5.20.0" },
+    { name = "openai", specifier = ">=1.40.0" },
     { name = "pydantic", specifier = ">=2.9.0" },
     { name = "pydantic-settings", specifier = ">=2.5.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
@@ -385,45 +383,6 @@ wheels = [
 ]
 
 [[package]]
-name = "google-auth"
-version = "2.53.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "pyasn1-modules" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c6/ad/ff781329bbbdc0974a098d996e89c9e1f7024262f9e3eec442fbb9ad1ac6/google_auth-2.53.0.tar.gz", hash = "sha256:e7e6aa16f6bee7b2b264830fd04f08087a1d5a836df516251a5d15327b246c9c", size = 335844, upload-time = "2026-05-15T20:53:07.928Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4a/c9/db44165ba7c581268c6d46017ef63339110378305062830104fc7fa144cb/google_auth-2.53.0-py3-none-any.whl", hash = "sha256:6e7449917c599b35126a99ec268ec6880301f2fea41dce198fe8fd83ff642b68", size = 246071, upload-time = "2026-05-15T20:53:05.609Z" },
-]
-
-[package.optional-dependencies]
-requests = [
-    { name = "requests" },
-]
-
-[[package]]
-name = "google-genai"
-version = "2.6.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "distro" },
-    { name = "google-auth", extra = ["requests"] },
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "requests" },
-    { name = "sniffio" },
-    { name = "tenacity" },
-    { name = "typing-extensions" },
-    { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/ec/6e49f50f5c70588d97c6ed25e0b8c18828bf4d58895f397b53a7522168a1/google_genai-2.6.0.tar.gz", hash = "sha256:7d4f777234002f2e94be499dbdfb43b506a6aca9dbbec13e61d3dc6ce640ffa7", size = 554809, upload-time = "2026-05-22T01:34:33.581Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/9e/e8ba4e58a9d5daf42343f3ea1cb0efb721eba36a1d6624e9873d039a5c1e/google_genai-2.6.0-py3-none-any.whl", hash = "sha256:272b6f6320f5d355735241ad441f972af095ec80dc10cb075cb430d96721648a", size = 821003, upload-time = "2026-05-22T01:34:31.55Z" },
-]
-
-[[package]]
 name = "graphiti-core"
 version = "0.29.1"
 source = { registry = "https://pypi.org/simple" }
@@ -439,23 +398,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/08/a6/0876082003a7af08f5627c0fb27b265f403a6631efe341a4a6b4bc905c50/graphiti_core-0.29.1.tar.gz", hash = "sha256:050d7cb93e3125100ae45a2bfebadcaba1601b37575330744e834156284938b3", size = 6912025, upload-time = "2026-05-21T03:33:25.069Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ed/49/e3074ab16e54f6d3f1d5fb6c3bd7ae21f5ce498ca3cb92696bd881d6eef0/graphiti_core-0.29.1-py3-none-any.whl", hash = "sha256:c04567261cc21853c66424d2378f4830ef4c6c02d7f6fb5518c215f60364f474", size = 354427, upload-time = "2026-05-21T03:33:22.939Z" },
-]
-
-[[package]]
-name = "groq"
-version = "1.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "distro" },
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "sniffio" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/27/51/4728c13611849ff6cf8536740ae78ba3ee5e665d67b572a47c9ead0f9788/groq-1.2.0.tar.gz", hash = "sha256:85459e27c9c17f22404349c785cd08680362cfe85e07cc060be46c4832f108c3", size = 155609, upload-time = "2026-04-18T10:43:50.68Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/82/748639c95c60ad8846c65b167ca611c815d06d5f67a9e73b23486dce4fdf/groq-1.2.0-py3-none-any.whl", hash = "sha256:1002060a743b27c8f86765e1bc9749c98498e961d9fe2e4902bf7804a71c3c84", size = 142334, upload-time = "2026-04-18T10:43:49.125Z" },
 ]
 
 [[package]]
@@ -1085,27 +1027,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f3/96/f6e63bdeb5a7809c25374872c6b59f03193c261eb029820e7d29c3aa8d07/posthog-7.15.4.tar.gz", hash = "sha256:9d7fe7bc0f03ed699e0608be0a6ef60267129a597651eb1c78c89c290c0a9b18", size = 218005, upload-time = "2026-05-25T06:33:09.727Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/b2/1108392d27c14139551cd2978bcc60c52c5fa0d52c8f639fb87b7b91d360/posthog-7.15.4-py3-none-any.whl", hash = "sha256:96f3a530a0dd709b91322212c61e161bf1e17a88d5202206870381222bc0fe2d", size = 255366, upload-time = "2026-05-25T06:33:07.427Z" },
-]
-
-[[package]]
-name = "pyasn1"
-version = "0.6.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/5c/5f/6583902b6f79b399c9c40674ac384fd9cd77805f9e6205075f828ef11fb2/pyasn1-0.6.3.tar.gz", hash = "sha256:697a8ecd6d98891189184ca1fa05d1bb00e2f84b5977c481452050549c8a72cf", size = 148685, upload-time = "2026-03-17T01:06:53.382Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/a0/7d793dce3fa811fe047d6ae2431c672364b462850c6235ae306c0efd025f/pyasn1-0.6.3-py3-none-any.whl", hash = "sha256:a80184d120f0864a52a073acc6fc642847d0be408e7c7252f31390c0f4eadcde", size = 83997, upload-time = "2026-03-17T01:06:52.036Z" },
-]
-
-[[package]]
-name = "pyasn1-modules"
-version = "0.4.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pyasn1" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e9/e6/78ebbb10a8c8e4b61a59249394a4a594c1a7af95593dc933a349c8d00964/pyasn1_modules-0.4.2.tar.gz", hash = "sha256:677091de870a80aae844b1ca6134f54652fa2c8c5a52aa396440ac3106e941e6", size = 307892, upload-time = "2025-03-28T02:41:22.17Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/8d/d529b5d697919ba8c11ad626e835d4039be708a35b0d22de83a269a6682c/pyasn1_modules-0.4.2-py3-none-any.whl", hash = "sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a", size = 181259, upload-time = "2025-03-28T02:41:19.028Z" },
 ]
 
 [[package]]
