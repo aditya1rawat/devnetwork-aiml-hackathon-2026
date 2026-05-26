@@ -8,6 +8,9 @@ export type EventName =
   | "failover"
   | "gateway_mode"
   | "provider_state"
+  | "kb_lookup_started"
+  | "kb_lookup_result"
+  | "kb_ingest_queued"
   | "incident_done";
 
 export interface StreamEvent {

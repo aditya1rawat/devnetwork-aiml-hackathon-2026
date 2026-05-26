@@ -130,7 +130,7 @@ export function IncidentClient({ id }: { id: string }) {
 
         <ChaosPanel events={events} />
 
-        <FinalReport events={events} />
+        <FinalReport events={events} incidentId={id} />
       </div>
     </main>
   );

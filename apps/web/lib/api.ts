@@ -79,3 +79,40 @@ export async function listIncidents(): Promise<IncidentSummary[]> {
   const j = (await r.json()) as { incidents: IncidentSummary[] };
   return j.incidents;
 }
+
+export interface CaseGraphNode {
+  id: string;
+  type: "incident" | "service" | "root_cause" | "remediation" | "other";
+  label: string;
+  meta: Record<string, unknown>;
+}
+
+export interface CaseGraphEdge {
+  source: string;
+  target: string;
+  type: string;
+  label: string;
+}
+
+export interface CaseGraph {
+  nodes: CaseGraphNode[];
+  edges: CaseGraphEdge[];
+  focus_id: string;
+}
+
+export async function getCaseGraph(id: string): Promise<CaseGraph | null> {
+  const r = await fetch(`${ORCH}/incident/${id}/case-graph`, { cache: "no-store" });
+  if (r.status === 404 || r.status === 503) return null;
+  if (!r.ok) throw new Error(`case-graph ${r.status}`);
+  return (await r.json()) as CaseGraph;
+}
+
+export async function resetKB(): Promise<void> {
+  const r = await fetch(`${ORCH}/admin/kb/reset`, { method: "POST" });
+  if (!r.ok) throw new Error(`reset kb ${r.status}`);
+}
+
+export async function manualIngest(id: string): Promise<void> {
+  const r = await fetch(`${ORCH}/admin/kb/ingest?id=${encodeURIComponent(id)}`, { method: "POST" });
+  if (!r.ok) throw new Error(`ingest ${r.status}`);
+}

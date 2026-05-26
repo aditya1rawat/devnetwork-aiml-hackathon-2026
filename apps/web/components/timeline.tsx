@@ -12,6 +12,9 @@ const COLOR: Record<EventName, string> = {
   failover: "var(--color-danger)",
   gateway_mode: "var(--color-warn)",
   provider_state: "var(--color-danger)",
+  kb_lookup_started: "var(--color-shadow-prov)",
+  kb_lookup_result: "var(--color-shadow-prov)",
+  kb_ingest_queued: "var(--color-success)",
   incident_done: "var(--color-success)",
 };
 
@@ -25,6 +28,9 @@ const LABEL: Record<EventName, string> = {
   failover: "failover",
   gateway_mode: "gateway",
   provider_state: "provider",
+  kb_lookup_started: "kb?",
+  kb_lookup_result: "kb✓",
+  kb_ingest_queued: "kb+",
   incident_done: "done",
 };
 

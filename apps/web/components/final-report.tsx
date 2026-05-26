@@ -1,34 +1,85 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { StreamEvent } from "@/lib/types";
+import { CaseGraph } from "./case-graph";
+import { RelatedCasesList } from "./related-cases-list";
 
-export function FinalReport({ events }: { events: StreamEvent[] }) {
+export function FinalReport({ events, incidentId }: { events: StreamEvent[]; incidentId: string }) {
+  const [fullscreen, setFullscreen] = useState(false);
+
   const md = useMemo(() => {
     const e = [...events].reverse().find((x) => x.type === "incident_done");
     return e ? String((e.data as { report_md?: string }).report_md ?? "") : "";
   }, [events]);
+
+  const halted = useMemo(() => /halted|incomplete/i.test(md), [md]);
 
   if (!md) return null;
 
   const sections = parseSections(md);
 
   return (
-    <section className="rounded-xl border border-[var(--color-success)]/35 bg-[var(--color-success-soft)]/15 p-8 sm:p-10">
-      <div className="mb-8 flex items-baseline justify-between gap-4">
-        <div className="flex items-baseline gap-4">
-          <span className="inline-flex h-7 items-center rounded-md border border-[var(--color-success)]/55 px-2 font-mono-label text-[var(--color-success)]">
-            investigation complete
-          </span>
-          <h2 className="font-serif-display text-[26px] leading-none text-[var(--color-fg)]">Final Report</h2>
+    <>
+      <section className="rounded-xl border border-[var(--color-success)]/35 bg-[var(--color-success-soft)]/15 p-8 sm:p-10">
+        <div className="mb-8 flex items-baseline justify-between gap-4">
+          <div className="flex items-baseline gap-4">
+            <span className="inline-flex h-7 items-center rounded-md border border-[var(--color-success)]/55 px-2 font-mono-label text-[var(--color-success)]">
+              investigation complete
+            </span>
+            <h2 className="font-serif-display text-[26px] leading-none text-[var(--color-fg)]">Final Report</h2>
+          </div>
         </div>
-      </div>
 
-      <article className="space-y-9">
-        {sections.map((s, i) => (
-          <Section key={i} title={s.title} body={s.body} />
-        ))}
-      </article>
-    </section>
+        <article className="space-y-9">
+          {sections.map((s, i) => (
+            <Section key={i} title={s.title} body={s.body} />
+          ))}
+        </article>
+
+        <section className="mt-10 border-t border-[var(--color-border)] pt-6">
+          <header className="mb-4 flex items-baseline justify-between gap-4">
+            <h3 className="font-mono-label text-[var(--color-fg-dim)]">prior cases consulted</h3>
+            <button
+              type="button"
+              onClick={() => setFullscreen(true)}
+              className="rounded-md border border-[var(--color-border)] px-2.5 py-1 font-mono-label text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-2)]/60"
+              aria-label="open case graph fullscreen"
+            >
+              ⛶ fullscreen
+            </button>
+          </header>
+          <CaseGraph incidentId={incidentId} height={360} />
+          <RelatedCasesList incidentId={incidentId} />
+          {halted ? (
+            <p className="mt-4 font-mono-label text-[var(--color-warn)]">
+              halted — not auto-saved to knowledge base
+            </p>
+          ) : null}
+        </section>
+      </section>
+
+      {fullscreen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-bg)]/85 backdrop-blur"
+          onClick={() => setFullscreen(false)}
+        >
+          <div
+            className="relative h-[90vh] w-[90vw] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setFullscreen(false)}
+              className="absolute right-3 top-3 z-10 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 font-mono-label text-[var(--color-fg-muted)]"
+              aria-label="close fullscreen"
+            >
+              ✕ close
+            </button>
+            <CaseGraph incidentId={incidentId} height="100%" />
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
