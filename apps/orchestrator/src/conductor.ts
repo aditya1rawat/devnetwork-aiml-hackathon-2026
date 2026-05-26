@@ -18,6 +18,9 @@ export interface ConductorEvent {
     | "failover"
     | "gateway_mode"
     | "provider_state"
+    | "kb_lookup_started"
+    | "kb_lookup_result"
+    | "kb_ingest_queued"
     | "incident_done";
   data: Record<string, unknown>;
 }
@@ -125,9 +128,24 @@ export async function runConductor(opts: ConductorOpts): Promise<IncidentState> 
     }
 
     emit({ type: "tool_call", data: { step, tool: parsedPrimary.action, args: parsedPrimary.args } });
+    if (parsedPrimary.action === "read_incident_kb") {
+      emit({ type: "kb_lookup_started", data: { step, query: String(parsedPrimary.args.query ?? "") } });
+    }
     const toolResult = await opts.pool.invoke({ step, tool: parsedPrimary.action, args: parsedPrimary.args });
     appendToolResult(s, toolResult);
     emit({ type: "tool_result", data: { step, status: toolResult.status, result: toolResult.result } });
+    if (parsedPrimary.action === "read_incident_kb" && toolResult.status === "ok") {
+      const r = toolResult.result as { incidents?: Array<{ incident_id: string }> } | null;
+      const incidents = r?.incidents ?? [];
+      emit({
+        type: "kb_lookup_result",
+        data: {
+          step,
+          hit_count: incidents.length,
+          top_ids: incidents.slice(0, 3).map((x) => x.incident_id),
+        },
+      });
+    }
 
     const shadowStep = await shadowPromise;
     if (shadowStep) {
@@ -162,7 +180,7 @@ function buildMessages(s: IncidentState, finalStep = false) {
 function parseStep(index: number, raw: string): AgentStep {
   const trimmed = stripCodeFence(raw).trim();
   const parsed = JSON.parse(trimmed) as { action: string; args?: Record<string, unknown>; rationale?: string; hypotheses?: string[] };
-  const validActions: AgentAction[] = ["search_logs", "query_metrics", "query_traces", "read_runbook", "report"];
+  const validActions: AgentAction[] = ["search_logs", "query_metrics", "query_traces", "read_runbook", "read_incident_kb", "report"];
   if (!validActions.includes(parsed.action as AgentAction)) {
     throw new Error(`invalid action "${parsed.action}"`);
   }

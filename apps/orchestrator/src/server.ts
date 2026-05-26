@@ -4,6 +4,7 @@ import { GatewayClient } from "./gateway.js";
 import { McpPool } from "./mcp-pool.js";
 import { runConductor, type ConductorEvent } from "./conductor.js";
 import { ProviderRegistry } from "./providers.js";
+import { IncidentKbClient } from "./incident-kb-client.js";
 
 interface AppDeps {
   gateway: GatewayClient;
@@ -14,6 +15,7 @@ interface AppDeps {
     killNemotron: boolean;
     gatewayDown: boolean;
   };
+  kb: IncidentKbClient | null;
 }
 
 interface DemoScenario {
@@ -88,6 +90,61 @@ export function buildApp(deps: AppDeps) {
     await next();
   });
 
+  const SEVERITY_BY_SCENARIO: Record<string, "sev1" | "sev2" | "sev3"> = {
+    "worker-oom": "sev2",
+    "db-saturation": "sev1",
+  };
+
+  const KNOWN_SERVICES = new Set(["worker", "db_proxy", "auth", "gateway", "api"]);
+
+  function statusFromEvents(events: ConductorEvent[]): "resolved" | "halted" | "failed_over" | "running" {
+    const failoverEvt = events.find((e) => e.type === "failover");
+    const doneEvt = [...events].reverse().find((e) => e.type === "incident_done");
+    if (!doneEvt) return failoverEvt ? "failed_over" : "running";
+    const preview = ((doneEvt.data as { report_md?: string }).report_md ?? "").toLowerCase();
+    if (preview.includes("halted") || preview.includes("incomplete")) return "halted";
+    return "resolved";
+  }
+
+  function buildBundle(id: string, scenarioId: string | undefined, events: ConductorEvent[]) {
+    const doneEvt = [...events].reverse().find((e) => e.type === "incident_done");
+    const reportMd = String((doneEvt?.data as { report_md?: string })?.report_md ?? "");
+    const failedOver = events.some((e) => e.type === "failover");
+    const severity: "sev1" | "sev2" | "sev3" = scenarioId ? (SEVERITY_BY_SCENARIO[scenarioId] ?? "sev2") : "sev2";
+
+    const servicesTouched = Array.from(
+      new Set(
+        events
+          .filter((e) => e.type === "tool_call")
+          .map((e) => String((e.data as { args?: { service?: string } }).args?.service ?? ""))
+          .filter((s) => KNOWN_SERVICES.has(s)),
+      ),
+    );
+
+    const toolLines = events
+      .filter((e) => e.type === "tool_call")
+      .slice(0, 12)
+      .map((e) => {
+        const d = e.data as { tool?: string; args?: Record<string, unknown> };
+        return `${d.tool}(${JSON.stringify(d.args ?? {})})`;
+      });
+    const toolLogDigest = toolLines.join("; ").slice(0, 1200);
+
+    const title = scenarioId ? `${scenarioId} ${id}` : `Incident ${id}`;
+
+    return {
+      incident_id: id,
+      title,
+      report_md: reportMd || "# Incident\n(no report content)",
+      scenario: scenarioId ?? null,
+      failed_over: failedOver,
+      severity,
+      resolved_at: new Date().toISOString(),
+      services_touched: servicesTouched,
+      tool_log_digest: toolLogDigest,
+    };
+  }
+
   function spawnIncident(id: string, scenario?: string) {
     const entry = {
       events: [] as ConductorEvent[],
@@ -114,6 +171,20 @@ export function buildApp(deps: AppDeps) {
         if (e.type === "incident_done") {
           entry.done = true;
           entry.endedAt = Date.now();
+          const status = statusFromEvents(entry.events);
+          if (status === "resolved" && deps.kb) {
+            const bundle = buildBundle(id, entry.scenario, entry.events);
+            deps.kb.ingest(bundle).then(
+              (res) => {
+                const evt: ConductorEvent = { type: "kb_ingest_queued", data: { job_id: res.job_id } };
+                entry.events.push(evt);
+                for (const fn of entry.subs) fn(evt);
+              },
+              (err: unknown) => {
+                console.warn(`[argus] kb ingest failed for ${id}: ${(err as Error).message}`);
+              },
+            );
+          }
         }
       },
     }).catch((err: unknown) => {
@@ -260,6 +331,44 @@ export function buildApp(deps: AppDeps) {
     deps.gateway.setMode("gateway");
     broadcastGatewayMode("gateway");
     return c.json({ ok: true });
+  });
+
+  app.get("/incident/:id/case-graph", async (c) => {
+    if (!deps.kb) return c.json({ error: "kb unavailable" }, 503);
+    const id = c.req.param("id");
+    try {
+      const graph = await deps.kb.caseGraph(id);
+      return c.json(graph);
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (msg.includes("404")) return c.json({ error: "not in kb yet" }, 404);
+      return c.json({ error: msg }, 502);
+    }
+  });
+
+  app.post("/admin/kb/reset", async (c) => {
+    if (!deps.kb) return c.json({ error: "kb unavailable" }, 503);
+    try {
+      await deps.kb.reset();
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 502);
+    }
+  });
+
+  app.post("/admin/kb/ingest", async (c) => {
+    if (!deps.kb) return c.json({ error: "kb unavailable" }, 503);
+    const id = c.req.query("id");
+    if (!id) return c.json({ error: "id query required" }, 400);
+    const entry = incidents.get(id);
+    if (!entry) return c.json({ error: "unknown incident" }, 404);
+    try {
+      const bundle = buildBundle(id, entry.scenario, entry.events);
+      const res = await deps.kb.ingest(bundle);
+      return c.json({ ok: true, job_id: res.job_id });
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 502);
+    }
   });
 
   return { app, incidents };

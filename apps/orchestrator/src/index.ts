@@ -4,6 +4,8 @@ import { buildApp } from "./server.js";
 import { GatewayClient } from "./gateway.js";
 import { McpPool } from "./mcp-pool.js";
 import { StdioMcpClients } from "./mcp-stdio.js";
+import { HttpMcpClient } from "./mcp-http.js";
+import { IncidentKbClient } from "./incident-kb-client.js";
 import { ProviderRegistry } from "./providers.js";
 
 const PORT = Number(process.env.PORT ?? 7200);
@@ -31,20 +33,37 @@ if (!process.env.TRUEFOUNDRY_API_KEY) {
 const mcpClients = new StdioMcpClients();
 await mcpClients.connectAll();
 
+const kbMcpUrl = process.env.INCIDENT_KB_MCP_URL ?? "http://localhost:7300/mcp";
+const kbClient = new HttpMcpClient(kbMcpUrl, "argus-orchestrator-incident-kb");
+try {
+  await kbClient.connect();
+  console.log(`[argus] incident-kb mcp connected at ${kbMcpUrl}`);
+} catch (err) {
+  console.warn(`[argus] incident-kb mcp not reachable at ${kbMcpUrl}: ${(err as Error).message}`);
+}
+
+const kbAdmin = process.env.INCIDENT_KB_ADMIN_URL
+  ? new IncidentKbClient(process.env.INCIDENT_KB_ADMIN_URL)
+  : null;
+
 const pool = new McpPool({
   tools: {
     search_logs: "logs",
     query_metrics: "metrics",
     query_traces: "traces",
     read_runbook: "runbook",
+    read_incident_kb: "incident_kb",
   },
-  call: (server, tool, args) => mcpClients.call(server, tool, args),
+  call: async (server, tool, args) => {
+    if (server === "incident_kb") return kbClient.call(tool, args);
+    return mcpClients.call(server, tool, args);
+  },
 });
 
 const registry = new ProviderRegistry(["claude", "nemotron"], { quarantineMs: 60_000 });
 const chaosState = { killClaude: false, killNemotron: false, gatewayDown: false };
 
-const { app } = buildApp({ gateway, pool, registry, chaosState });
+const { app } = buildApp({ gateway, pool, registry, chaosState, kb: kbAdmin });
 
 serve({ fetch: app.fetch, port: PORT }, ({ port }) => {
   console.log(`[argus] orchestrator on :${port}`);
@@ -52,5 +71,6 @@ serve({ fetch: app.fetch, port: PORT }, ({ port }) => {
 
 process.on("SIGINT", async () => {
   await mcpClients.closeAll();
+  await kbClient.close();
   process.exit(0);
 });

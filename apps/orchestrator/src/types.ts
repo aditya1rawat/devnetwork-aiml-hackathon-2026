@@ -24,6 +24,7 @@ export type AgentAction =
   | "query_metrics"
   | "query_traces"
   | "read_runbook"
+  | "read_incident_kb"
   | "report";
 
 export interface ToolCallRecord {
