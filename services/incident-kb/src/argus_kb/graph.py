@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from collections import deque
 
 from graphiti_core import Graphiti
 from graphiti_core.cross_encoder.gemini_reranker_client import GeminiRerankerClient
@@ -28,6 +30,48 @@ log = logging.getLogger(__name__)
 _graphiti: Graphiti | None = None
 _neo4j_driver = None
 _embed_model: SentenceTransformer | None = None
+
+
+class RateLimiter:
+    """Sliding-window limiter. Gemini free tier is ~10 RPM and a single
+    add_episode bursts many sequential LLM calls, so every Gemini call is
+    gated through one shared limiter to stay just under the cap.
+    """
+
+    def __init__(self, max_calls: int, period_s: float) -> None:
+        self.max_calls = max_calls
+        self.period = period_s
+        self._calls: deque[float] = deque()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            while self._calls and now - self._calls[0] > self.period:
+                self._calls.popleft()
+            if len(self._calls) >= self.max_calls:
+                wait = self.period - (now - self._calls[0])
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                now = time.monotonic()
+                while self._calls and now - self._calls[0] > self.period:
+                    self._calls.popleft()
+            self._calls.append(time.monotonic())
+
+
+_gemini_limiter = RateLimiter(max_calls=8, period_s=65.0)
+
+
+class ThrottledGeminiClient(GeminiClient):
+    async def generate_response(self, *args, **kwargs):
+        await _gemini_limiter.acquire()
+        return await super().generate_response(*args, **kwargs)
+
+
+class ThrottledGeminiReranker(GeminiRerankerClient):
+    async def rank(self, *args, **kwargs):
+        await _gemini_limiter.acquire()
+        return await super().rank(*args, **kwargs)
 
 
 class LocalEmbedder(EmbedderClient):
@@ -79,8 +123,8 @@ async def get_graphiti() -> Graphiti:
     await _wait_for_neo4j(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
 
     llm_config = LLMConfig(api_key=settings.gemini_api_key, model=settings.graphiti_llm_model)
-    llm_client = GeminiClient(config=llm_config)
-    reranker = GeminiRerankerClient(config=llm_config)
+    llm_client = ThrottledGeminiClient(config=llm_config)
+    reranker = ThrottledGeminiReranker(config=llm_config)
     embedder = LocalEmbedder(settings.graphiti_embedder_model)
 
     _graphiti = Graphiti(
