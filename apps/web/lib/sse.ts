@@ -25,7 +25,7 @@ function getStream(url: string): Stream {
   const handlers: EventName[] = [
     "step_start", "primary_step", "shadow_step",
     "tool_call", "tool_result", "divergence", "failover",
-    "gateway_mode", "incident_done",
+    "gateway_mode", "provider_state", "incident_done",
   ];
   for (const h of handlers) {
     es.addEventListener(h, (e: MessageEvent) => {

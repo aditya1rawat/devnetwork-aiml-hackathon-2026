@@ -7,6 +7,7 @@ export type EventName =
   | "divergence"
   | "failover"
   | "gateway_mode"
+  | "provider_state"
   | "incident_done";
 
 export interface StreamEvent {
