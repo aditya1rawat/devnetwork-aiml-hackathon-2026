@@ -7,8 +7,18 @@ export function AgreementMeter({ events, shadowPromoted = false }: { events: Str
     const divs = events.filter((e) => e.type === "divergence");
     const total = divs.length;
     const flagged = divs.filter((e) => (e.data as { flagged?: boolean }).flagged).length;
-    const pct = total === 0 ? 100 : Math.round((1 - flagged / total) * 100);
-    return { pct, flagged, total };
+    if (total === 0) return { pct: 100, flagged: 0, total: 0 };
+    const scores = divs.map((e) => {
+      const d = e.data as { agreement?: number; flagged?: boolean; cosine?: number; actionMismatch?: boolean; argsMismatch?: boolean };
+      if (typeof d.agreement === "number") return d.agreement;
+      // Backward compat: synthesize from legacy fields
+      const actionMatch = !d.actionMismatch;
+      const argsMatch = actionMatch && !d.argsMismatch;
+      const cos = typeof d.cosine === "number" ? d.cosine : 0;
+      return 0.30 * (actionMatch ? 1 : 0) + 0.15 * (argsMatch ? 1 : 0) + 0.55 * cos;
+    });
+    const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+    return { pct: Math.round(mean * 100), flagged, total };
   }, [events]);
 
   if (shadowPromoted) {
