@@ -53,6 +53,7 @@ export interface DivergenceScore {
   cosine: number;
   actionMismatch: boolean;
   argsMismatch: boolean;
+  agreement: number;
   flagged: boolean;
   summary: string;
 }

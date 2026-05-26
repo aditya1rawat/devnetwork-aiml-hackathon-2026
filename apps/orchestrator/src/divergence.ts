@@ -1,17 +1,34 @@
 import type { AgentStep, DivergenceScore } from "./types.js";
 
-export function compareSteps(step: number, primary: AgentStep, shadow: AgentStep): DivergenceScore {
-  const actionMismatch = primary.action !== shadow.action;
-  const argsMismatch = !actionMismatch && !stableEqual(primary.args, shadow.args);
-  const rationaleCosine = jaccardCosine(primary.rationale, shadow.rationale);
-  const flagged = actionMismatch || argsMismatch || rationaleCosine < 0.4;
+const W_ACTION = 0.30;
+const W_ARGS = 0.15; // only counts when action matches
+const W_RATIONALE = 0.55;
+const FLAG_THRESHOLD = 0.35;
 
-  const summary = actionMismatch
-    ? `shadow chose ${shadow.action} instead of ${primary.action}`
-    : argsMismatch
+export function compareSteps(step: number, primary: AgentStep, shadow: AgentStep): DivergenceScore {
+  const actionMatch = primary.action === shadow.action;
+  const argsMatch = actionMatch && stableEqual(primary.args, shadow.args);
+  const rationaleCosine = jaccardCosine(primary.rationale, shadow.rationale);
+
+  // Partial-credit agreement: parallel exploration with different tools but aligned
+  // reasoning is still useful agreement, not a hard divergence.
+  const agreement =
+    W_ACTION * (actionMatch ? 1 : 0) +
+    W_ARGS * (argsMatch ? 1 : 0) +
+    W_RATIONALE * rationaleCosine;
+
+  const actionMismatch = !actionMatch;
+  const argsMismatch = actionMatch && !argsMatch;
+  const flagged = agreement < FLAG_THRESHOLD;
+
+  const summary = !actionMatch
+    ? rationaleCosine >= 0.5
+      ? `different tactics, aligned reasoning (cosine=${rationaleCosine.toFixed(2)})`
+      : `shadow chose ${shadow.action} instead of ${primary.action}`
+    : !argsMatch
       ? `same action, different args`
       : rationaleCosine < 0.4
-        ? `rationale divergence (cosine=${rationaleCosine.toFixed(2)})`
+        ? `matching action, divergent rationale (cosine=${rationaleCosine.toFixed(2)})`
         : `agreement`;
 
   return {
@@ -19,6 +36,7 @@ export function compareSteps(step: number, primary: AgentStep, shadow: AgentStep
     cosine: rationaleCosine,
     actionMismatch,
     argsMismatch,
+    agreement,
     flagged,
     summary,
   };
@@ -37,6 +55,13 @@ function sortDeep(v: unknown): unknown {
   return out;
 }
 
+const STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "from", "are", "was", "will",
+  "have", "has", "had", "but", "not", "any", "all", "can", "may", "should",
+  "could", "would", "into", "out", "its", "their", "them", "they", "then",
+  "than", "what", "when", "where", "which", "who", "why", "how",
+]);
+
 function jaccardCosine(a: string, b: string): number {
   const ta = new Set(tokens(a));
   const tb = new Set(tokens(b));
@@ -47,5 +72,8 @@ function jaccardCosine(a: string, b: string): number {
 }
 
 function tokens(s: string): string[] {
-  return s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+  return s
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 1 && !STOPWORDS.has(w));
 }
