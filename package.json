@@ -7,6 +7,10 @@
     "dev:orch": "pnpm --filter @argus/orchestrator dev",
     "dev:mcp": "pnpm --filter @argus/mcp dev",
     "dev:cluster": "uv --directory services/mock-cluster run cluster",
+    "dev:neo4j": "docker compose up -d neo4j",
+    "dev:kb": "uv --directory services/incident-kb run argus-kb",
+    "seed-kb": "tsx scripts/seed-kb.ts",
+    "reset-kb": "tsx scripts/reset-kb.ts",
     "test": "pnpm -r test",
     "build": "pnpm -r build"
   },
