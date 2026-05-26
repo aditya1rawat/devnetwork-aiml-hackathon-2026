@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
+from argus_kb.case_graph import fetch_case_subgraph
 from argus_kb.graph import clear_group, close_all, get_graphiti
 from argus_kb.ingest import IncidentBundle, ingest_bundle
 
@@ -38,3 +39,11 @@ async def admin_ingest(bundle: IncidentBundle) -> dict[str, str]:
 async def admin_reset() -> dict[str, bool]:
     await clear_group()
     return {"ok": True}
+
+
+@app.get("/case-graph/{incident_id}")
+async def case_graph(incident_id: str) -> dict:
+    subgraph = await fetch_case_subgraph(incident_id)
+    if not subgraph["nodes"]:
+        raise HTTPException(status_code=404, detail=f"incident {incident_id} not found in graph")
+    return subgraph

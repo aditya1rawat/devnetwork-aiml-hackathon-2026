@@ -90,6 +90,7 @@ async def get_graphiti() -> Graphiti:
         llm_client=llm_client,
         embedder=embedder,
         cross_encoder=reranker,
+        max_coroutines=1,  # serialize internal LLM calls to stay under Gemini free-tier RPM
     )
     await _graphiti.build_indices_and_constraints()
     log.info("graphiti ready")

@@ -1,10 +1,12 @@
 """Convert an incident bundle into a Graphiti episode and submit it."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
 
+from graphiti_core.llm_client.errors import RateLimitError
 from graphiti_core.nodes import EpisodeType
 from pydantic import BaseModel
 
@@ -15,6 +17,8 @@ from argus_kb.ontology import ENTITY_TYPES
 log = logging.getLogger(__name__)
 
 VALID_SEVERITIES = {"sev1", "sev2", "sev3"}
+_RATE_LIMIT_RETRIES = 6
+_RATE_LIMIT_BACKOFF_S = 20.0
 
 
 class IncidentBundle(BaseModel):
@@ -70,14 +74,24 @@ async def ingest_bundle(b: IncidentBundle) -> str:
     if reference_time.tzinfo is None:
         reference_time = reference_time.replace(tzinfo=timezone.utc)
 
-    await g.add_episode(
-        name=name,
-        episode_body=body,
-        source_description="argus-final-report",
-        source=EpisodeType.text,
-        reference_time=reference_time,
-        group_id=settings.graphiti_group_id,
-        entity_types=ENTITY_TYPES,
-    )
-    log.info("ingest queued: incident=%s job=%s", b.incident_id, job_id)
+    for attempt in range(_RATE_LIMIT_RETRIES):
+        try:
+            await g.add_episode(
+                name=name,
+                episode_body=body,
+                source_description="argus-final-report",
+                source=EpisodeType.text,
+                reference_time=reference_time,
+                group_id=settings.graphiti_group_id,
+                entity_types=ENTITY_TYPES,
+            )
+            break
+        except RateLimitError:
+            if attempt == _RATE_LIMIT_RETRIES - 1:
+                raise
+            wait = _RATE_LIMIT_BACKOFF_S * (attempt + 1)
+            log.warning("gemini rate limit on %s, retry %d after %.0fs", b.incident_id, attempt + 1, wait)
+            await asyncio.sleep(wait)
+
+    log.info("ingest done: incident=%s job=%s", b.incident_id, job_id)
     return job_id
