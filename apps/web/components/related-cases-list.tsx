@@ -1,33 +1,37 @@
 "use client";
-import { useEffect, useState } from "react";
-import { getCaseGraph } from "@/lib/api";
+import { useMemo } from "react";
+import type { StreamEvent } from "@/lib/types";
 
 interface Row {
   incidentId: string;
-  label: string;
 }
 
-export function RelatedCasesList({ incidentId }: { incidentId: string }) {
-  const [rows, setRows] = useState<Row[] | null>(null);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function looksLikeIncidentId(s: string): boolean {
+  return s.length > 0 && !UUID_RE.test(s);
+}
 
-  useEffect(() => {
-    let alive = true;
-    getCaseGraph(incidentId).then((g) => {
-      if (!alive || !g) return;
-      const cases = g.nodes
-        .filter((n) => n.type === "incident" && n.id !== g.focus_id)
-        .map<Row>((n) => ({
-          incidentId: String(n.meta?.incident_id ?? n.id),
-          label: n.label,
-        }));
-      setRows(cases);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [incidentId]);
+export function RelatedCasesList({ events }: { events: StreamEvent[] }) {
+  const rows = useMemo<Row[]>(() => {
+    const seen = new Set<string>();
+    const out: Row[] = [];
+    for (const e of events) {
+      if (e.type !== "kb_lookup_result") continue;
+      const ids = (e.data as { top_ids?: string[] }).top_ids ?? [];
+      for (const id of ids) {
+        // Skip stale events from before the MCP server resolved entity UUIDs
+        // back to incident slugs. UUID-shaped ids never route to a real
+        // incident, so showing them as links is worse than showing nothing.
+        if (!looksLikeIncidentId(id)) continue;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({ incidentId: id });
+      }
+    }
+    return out;
+  }, [events]);
 
-  if (!rows || rows.length === 0) return null;
+  if (rows.length === 0) return null;
 
   return (
     <ul className="mt-4 space-y-2">
@@ -38,9 +42,9 @@ export function RelatedCasesList({ incidentId }: { incidentId: string }) {
             href={`/incident/${r.incidentId}`}
             target="_blank"
             rel="noreferrer"
-            className="text-[14.5px] font-light text-[var(--color-fg-muted)] underline-offset-4 hover:underline hover:text-[var(--color-fg)]"
+            className="font-mono text-[13px] text-[var(--color-fg-muted)] underline-offset-4 hover:underline hover:text-[var(--color-fg)]"
           >
-            {r.label}
+            {r.incidentId}
           </a>
         </li>
       ))}

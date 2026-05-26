@@ -49,7 +49,7 @@ export function FinalReport({ events, incidentId }: { events: StreamEvent[]; inc
             </button>
           </header>
           <CaseGraph incidentId={incidentId} height={360} />
-          <RelatedCasesList incidentId={incidentId} />
+          <RelatedCasesList events={events} />
           {halted ? (
             <p className="mt-4 font-mono-label text-[var(--color-warn)]">
               halted — not auto-saved to knowledge base
@@ -84,8 +84,8 @@ export function FinalReport({ events, incidentId }: { events: StreamEvent[]; inc
 }
 
 function Section({ title, body }: { title: string; body: string }) {
-  const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
   const isRootCause = /root.?cause/i.test(title);
+  const blocks = parseBlocks(body);
   return (
     <div>
       {title ? (
@@ -94,9 +94,98 @@ function Section({ title, body }: { title: string; body: string }) {
           {isRootCause ? <span className="h-px flex-1 bg-[var(--color-border)]" /> : null}
         </h3>
       ) : null}
-      <div className={`space-y-2.5 max-w-[72ch] ${isRootCause ? "text-[18px] font-light leading-[1.55] text-[var(--color-fg)]" : "text-[15.5px] font-light leading-[1.6] text-[var(--color-fg-muted)]"}`}>
-        {lines.map((line, i) => renderLine(line, i))}
+      <div className={`max-w-[72ch] space-y-4 ${isRootCause ? "text-[18px] font-light leading-[1.55] text-[var(--color-fg)]" : "text-[15.5px] font-light leading-[1.6] text-[var(--color-fg-muted)]"}`}>
+        {blocks.map((b, i) =>
+          b.kind === "table" ? (
+            <TableBlock key={i} headers={b.headers} rows={b.rows} />
+          ) : (
+            <div key={i} className="space-y-2.5">
+              {b.lines.map((l, j) => renderLine(l, j))}
+            </div>
+          ),
+        )}
       </div>
+    </div>
+  );
+}
+
+type Block = { kind: "lines"; lines: string[] } | { kind: "table"; headers: string[]; rows: string[][] };
+
+function parseBlocks(body: string): Block[] {
+  const raw = body.split("\n");
+  const blocks: Block[] = [];
+  let i = 0;
+  while (i < raw.length) {
+    if (isTableRow(raw[i]!) && i + 1 < raw.length && isTableSeparator(raw[i + 1]!)) {
+      const headers = splitTableRow(raw[i]!);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < raw.length && isTableRow(raw[i]!)) {
+        rows.push(splitTableRow(raw[i]!));
+        i++;
+      }
+      blocks.push({ kind: "table", headers, rows });
+      continue;
+    }
+    const lines: string[] = [];
+    while (i < raw.length && !(isTableRow(raw[i]!) && i + 1 < raw.length && isTableSeparator(raw[i + 1]!))) {
+      const t = raw[i]!.trim();
+      if (t) lines.push(t);
+      i++;
+    }
+    if (lines.length > 0) blocks.push({ kind: "lines", lines });
+  }
+  return blocks;
+}
+
+function isTableRow(line: string): boolean {
+  const t = line.trim();
+  return t.startsWith("|") && t.length > 2 && t.lastIndexOf("|") > 0;
+}
+
+function isTableSeparator(line: string): boolean {
+  const t = line.trim();
+  return t.startsWith("|") && /^[|\s\-:]+$/.test(t) && t.includes("-");
+}
+
+function splitTableRow(line: string): string[] {
+  const t = line.trim();
+  const inner = t.startsWith("|") ? t.slice(1) : t;
+  const inner2 = inner.endsWith("|") ? inner.slice(0, -1) : inner;
+  return inner2.split("|").map((s) => s.trim());
+}
+
+function TableBlock({ headers, rows }: { headers: string[]; rows: string[][] }) {
+  return (
+    <div className="overflow-x-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/30">
+      <table className="w-full border-collapse text-[13.5px]">
+        <thead>
+          <tr>
+            {headers.map((h, i) => (
+              <th
+                key={i}
+                className="border-b border-[var(--color-border)] px-3 py-2 text-left align-bottom font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-dim)]"
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, ri) => (
+            <tr key={ri} className={ri % 2 ? "bg-[var(--color-surface)]/20" : undefined}>
+              {r.map((cell, ci) => (
+                <td
+                  key={ci}
+                  className="border-b border-[var(--color-border)]/40 px-3 py-2 align-top font-light text-[var(--color-fg)]"
+                >
+                  {renderInline(cell)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
