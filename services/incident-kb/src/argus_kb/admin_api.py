@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 
 from argus_kb.case_graph import fetch_case_subgraph
 from argus_kb.graph import clear_group, close_all, get_graphiti
-from argus_kb.ingest import IncidentBundle, ingest_bundle
+from argus_kb.ingest import IncidentBundle, schedule_ingest
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ async def health() -> dict[str, bool]:
 @app.post("/admin/ingest")
 async def admin_ingest(bundle: IncidentBundle) -> dict[str, str]:
     try:
-        job_id = await ingest_bundle(bundle)
+        job_id = schedule_ingest(bundle)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"job_id": job_id, "status": "queued"}

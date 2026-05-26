@@ -63,11 +63,26 @@ def build_episode_body(b: IncidentBundle) -> str:
     return "\n".join(lines)
 
 
-async def ingest_bundle(b: IncidentBundle) -> str:
-    """Submit episode to Graphiti. Returns a job id."""
+_background_tasks: set[asyncio.Task] = set()
+
+
+def schedule_ingest(b: IncidentBundle) -> str:
+    """Validate synchronously, then run extraction in the background.
+
+    Returns a job id immediately so the HTTP caller never blocks on the
+    (slow, rate-limited) graphiti extraction. Validation errors still surface
+    to the caller because they are raised before scheduling.
+    """
     validate_bundle(b)
-    g = await get_graphiti()
     job_id = f"ingest-{uuid.uuid4().hex[:12]}"
+    task = asyncio.create_task(_run_ingest(b, job_id))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return job_id
+
+
+async def _run_ingest(b: IncidentBundle, job_id: str) -> None:
+    g = await get_graphiti()
     name = f"incident:{b.incident_id}"
     body = build_episode_body(b)
     reference_time = datetime.fromisoformat(b.resolved_at.replace("Z", "+00:00"))
@@ -85,13 +100,15 @@ async def ingest_bundle(b: IncidentBundle) -> str:
                 group_id=settings.graphiti_group_id,
                 entity_types=ENTITY_TYPES,
             )
-            break
+            log.info("ingest done: incident=%s job=%s", b.incident_id, job_id)
+            return
         except RateLimitError:
             if attempt == _RATE_LIMIT_RETRIES - 1:
-                raise
+                log.error("ingest failed (rate limit) for %s job=%s", b.incident_id, job_id)
+                return
             wait = _RATE_LIMIT_BACKOFF_S * (attempt + 1)
             log.warning("gemini rate limit on %s, retry %d after %.0fs", b.incident_id, attempt + 1, wait)
             await asyncio.sleep(wait)
-
-    log.info("ingest done: incident=%s job=%s", b.incident_id, job_id)
-    return job_id
+        except Exception as e:
+            log.error("ingest failed for %s job=%s: %s", b.incident_id, job_id, e)
+            return

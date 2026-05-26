@@ -9,8 +9,10 @@ class Settings(BaseSettings):
     neo4j_password: str = "devpass"
 
     gemini_api_key: str = ""
-    graphiti_llm_provider: str = "gemini"
-    graphiti_llm_model: str = "gemini-2.5-flash"
+    groq_api_key: str = ""
+    # LLM provider for graphiti entity extraction: "groq" | "gemini"
+    graphiti_llm_provider: str = "groq"
+    graphiti_llm_model: str = "llama-3.3-70b-versatile"
     graphiti_embedder_provider: str = "sentence_transformers"
     graphiti_embedder_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     graphiti_group_id: str = "argus_incidents"

@@ -20,10 +20,13 @@ from graphiti_core.cross_encoder.gemini_reranker_client import GeminiRerankerCli
 from graphiti_core.embedder.client import EmbedderClient
 from graphiti_core.llm_client.config import LLMConfig
 from graphiti_core.llm_client.gemini_client import GeminiClient
+from graphiti_core.llm_client.groq_client import GroqClient
 from neo4j import AsyncGraphDatabase, exceptions as neo4j_exc
 from sentence_transformers import SentenceTransformer
 
 from argus_kb.config import settings
+
+GEMINI_RERANK_MODEL = "gemini-2.5-flash"
 
 log = logging.getLogger(__name__)
 
@@ -59,12 +62,22 @@ class RateLimiter:
             self._calls.append(time.monotonic())
 
 
+# Gemini free tier ~10 RPM; Groq free tier ~30 RPM. graphiti fires multiple
+# underlying API calls per generate_response, so each limiter sits well under
+# the nominal cap. Separate buckets because the providers have different caps.
 _gemini_limiter = RateLimiter(max_calls=8, period_s=65.0)
+_groq_limiter = RateLimiter(max_calls=12, period_s=65.0)
 
 
 class ThrottledGeminiClient(GeminiClient):
     async def generate_response(self, *args, **kwargs):
         await _gemini_limiter.acquire()
+        return await super().generate_response(*args, **kwargs)
+
+
+class ThrottledGroqClient(GroqClient):
+    async def generate_response(self, *args, **kwargs):
+        await _groq_limiter.acquire()
         return await super().generate_response(*args, **kwargs)
 
 
@@ -122,9 +135,20 @@ async def get_graphiti() -> Graphiti:
         return _graphiti
     await _wait_for_neo4j(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
 
-    llm_config = LLMConfig(api_key=settings.gemini_api_key, model=settings.graphiti_llm_model)
-    llm_client = ThrottledGeminiClient(config=llm_config)
-    reranker = ThrottledGeminiReranker(config=llm_config)
+    # Extraction LLM (the heavy path): Groq by default, Gemini optional.
+    if settings.graphiti_llm_provider == "groq":
+        llm_client = ThrottledGroqClient(
+            config=LLMConfig(api_key=settings.groq_api_key, model=settings.graphiti_llm_model)
+        )
+    else:
+        llm_client = ThrottledGeminiClient(
+            config=LLMConfig(api_key=settings.gemini_api_key, model=settings.graphiti_llm_model)
+        )
+
+    # Reranker is only hit at search time (low volume); keep it on Gemini.
+    reranker = ThrottledGeminiReranker(
+        config=LLMConfig(api_key=settings.gemini_api_key, model=GEMINI_RERANK_MODEL)
+    )
     embedder = LocalEmbedder(settings.graphiti_embedder_model)
 
     _graphiti = Graphiti(
