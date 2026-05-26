@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StreamEvent } from "@/lib/types";
 import { parseStep } from "@/lib/parse-step";
 
@@ -45,6 +45,73 @@ export function ReasoningPane({
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [safeSteps.length, state]);
+
+  const stepIndices = useMemo(() => {
+    const out: number[] = [];
+    safeSteps.forEach((e, i) => {
+      if ((e.type as string) !== "failover_marker") out.push(i);
+    });
+    return out;
+  }, [safeSteps]);
+  const lastStepIdx = stepIndices.length > 0 ? stepIndices[stepIndices.length - 1] : null;
+
+  const [manuallyOpened, setManuallyOpened] = useState<Set<number>>(() => new Set());
+  const [manuallyClosed, setManuallyClosed] = useState<Set<number>>(() => new Set());
+  const [autoId, setAutoId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (lastStepIdx === null) return;
+    setAutoId((prev) => (prev === lastStepIdx ? prev : lastStepIdx));
+  }, [lastStepIdx]);
+
+  const isExpanded = useCallback(
+    (idx: number) => (manuallyOpened.has(idx) || idx === autoId) && !manuallyClosed.has(idx),
+    [manuallyOpened, manuallyClosed, autoId],
+  );
+
+  const toggleCard = useCallback(
+    (idx: number) => {
+      const open = (manuallyOpened.has(idx) || idx === autoId) && !manuallyClosed.has(idx);
+      if (open) {
+        setManuallyOpened((s) => {
+          if (!s.has(idx)) return s;
+          const n = new Set(s);
+          n.delete(idx);
+          return n;
+        });
+        setManuallyClosed((s) => {
+          const n = new Set(s);
+          n.add(idx);
+          return n;
+        });
+      } else {
+        setManuallyClosed((s) => {
+          if (!s.has(idx)) return s;
+          const n = new Set(s);
+          n.delete(idx);
+          return n;
+        });
+        setManuallyOpened((s) => {
+          const n = new Set(s);
+          n.add(idx);
+          return n;
+        });
+      }
+    },
+    [manuallyOpened, manuallyClosed, autoId],
+  );
+
+  const expandAll = useCallback(() => {
+    setManuallyOpened(new Set(stepIndices));
+    setManuallyClosed(new Set());
+  }, [stepIndices]);
+
+  const collapseAll = useCallback(() => {
+    setManuallyOpened(new Set());
+    setManuallyClosed(new Set(stepIndices));
+  }, [stepIndices]);
+
+  const anyExpanded = stepIndices.some((i) => isExpanded(i));
 
   const borderColor =
     state === "killed" ? "var(--color-danger)" :
@@ -96,6 +163,18 @@ export function ReasoningPane({
           {lastLatency ? <span className="tnum">{lastLatency}ms</span> : null}
           {lastLatency ? <span>·</span> : null}
           <span className="tnum">{safeSteps.length} steps</span>
+          {stepIndices.length > 1 ? (
+            <>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={anyExpanded ? collapseAll : expandAll}
+                className="font-mono-meta text-[var(--color-fg-dim)] transition-colors hover:text-[var(--color-fg)]"
+              >
+                {anyExpanded ? "collapse all" : "expand all"}
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -126,6 +205,8 @@ export function ReasoningPane({
                   latency={d.latencyMs}
                   accent={style.accent}
                   postFailover={isPostFailover}
+                  expanded={isExpanded(i)}
+                  onToggle={() => toggleCard(i)}
                 />
               );
             })}
@@ -229,60 +310,160 @@ function ErrorStep({ step, error }: { step: number; error: string }) {
   );
 }
 
-function StepCard({ step, text, latency, accent, postFailover }: { step: number; text: string; latency?: number; accent: string; postFailover?: boolean }) {
+function StepCard({
+  step,
+  text,
+  latency,
+  accent,
+  postFailover,
+  expanded,
+  onToggle,
+}: {
+  step: number;
+  text: string;
+  latency?: number;
+  accent: string;
+  postFailover?: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const parsed = parseStep(text);
-  const hasStructure = parsed.action || parsed.rationale;
+  const hasStructure = Boolean(parsed.action || parsed.rationale);
   const ringColor = postFailover ? "var(--color-warn)" : "var(--color-border)";
+
+  const [showRaw, setShowRaw] = useState(false);
+  useEffect(() => {
+    if (!expanded) setShowRaw(false);
+  }, [expanded]);
+
+  const summaryLine = parsed.rationale ?? (hasStructure ? "" : parsed.raw);
 
   return (
     <li
-      className="rounded-lg border bg-[var(--color-bg)]/60"
+      className="overflow-hidden rounded-lg border bg-[var(--color-bg)]/60 transition-colors"
       style={{ borderColor: ringColor }}
     >
-      <header className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-2.5">
-        <div className="flex items-baseline gap-3">
-          <span className="font-mono-label text-[var(--color-fg-dim)] tnum">step {String(step).padStart(2, "0")}</span>
-          {parsed.action ? (
-            <span
-              className="rounded px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.05em]"
-              style={{ background: accent + "1f", color: accent }}
-            >
-              {parsed.action}
-            </span>
-          ) : null}
-          {postFailover ? (
-            <span className="font-mono text-[9.5px] font-medium uppercase tracking-[0.22em] text-[var(--color-warn)]">
-              post-failover
-            </span>
-          ) : null}
-        </div>
-        {latency ? <span className="font-mono-meta text-[var(--color-fg-dim)] tnum">{latency}ms</span> : null}
-      </header>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="group flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-surface)]/40"
+      >
+        <span className="font-mono-label text-[var(--color-fg-dim)] tnum shrink-0">
+          step {String(step).padStart(2, "0")}
+        </span>
+        {parsed.action ? (
+          <span
+            className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.05em]"
+            style={{ background: accent + "1f", color: accent }}
+          >
+            {parsed.action}
+          </span>
+        ) : null}
+        {postFailover ? (
+          <span className="shrink-0 font-mono text-[9.5px] font-medium uppercase tracking-[0.22em] text-[var(--color-warn)]">
+            post-failover
+          </span>
+        ) : null}
+        {!expanded && summaryLine ? (
+          <span
+            className={`min-w-0 flex-1 truncate ${hasStructure ? "font-light text-[13.5px] text-[var(--color-fg-muted)]" : "font-mono text-[12px] text-[var(--color-fg-muted)]"}`}
+          >
+            {summaryLine}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1" />
+        )}
+        {latency ? (
+          <span className="shrink-0 font-mono-meta text-[var(--color-fg-dim)] tnum">{latency}ms</span>
+        ) : null}
+        <span
+          aria-hidden
+          className="shrink-0 font-mono text-[11px] text-[var(--color-fg-dim)] transition-transform duration-200 group-hover:text-[var(--color-fg)]"
+          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+        >
+          ▸
+        </span>
+      </button>
 
-      {hasStructure ? (
-        <div className="space-y-3.5 px-4 py-3.5">
-          {parsed.action !== "report" && parsed.args && Object.keys(parsed.args).length > 0 ? <ArgsLine args={parsed.args} /> : null}
-          {parsed.rationale ? (
-            <p className="text-[14.5px] font-light leading-[1.55] text-[var(--color-fg)]">{parsed.rationale}</p>
-          ) : null}
-          {parsed.hypotheses && parsed.hypotheses.length > 0 ? (
-            <ul className="flex flex-wrap gap-1.5">
-              {parsed.hypotheses.map((h, i) => (
-                <li
-                  key={i}
-                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-2 py-1 text-[12.5px] font-light text-[var(--color-fg-muted)]"
-                >
-                  {h}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+      <div
+        className="grid transition-[grid-template-rows] duration-[220ms]"
+        style={{
+          gridTemplateRows: expanded ? "1fr" : "0fr",
+          transitionTimingFunction: "cubic-bezier(0.165, 0.84, 0.44, 1)",
+        }}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="border-t border-[var(--color-border)]">
+            {hasStructure ? (
+              <div className="space-y-3.5 px-4 py-3.5">
+                {parsed.action !== "report" && parsed.args && Object.keys(parsed.args).length > 0 ? (
+                  <ArgsLine args={parsed.args} />
+                ) : null}
+                {parsed.rationale ? (
+                  <p className="text-[14.5px] font-light leading-[1.55] text-[var(--color-fg)]">{parsed.rationale}</p>
+                ) : null}
+                {parsed.hypotheses && parsed.hypotheses.length > 0 ? (
+                  <ul className="flex flex-wrap gap-1.5">
+                    {parsed.hypotheses.map((h, i) => (
+                      <li
+                        key={i}
+                        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-2 py-1 text-[12.5px] font-light text-[var(--color-fg-muted)]"
+                      >
+                        {h}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <div className="border-t border-[var(--color-border)] pt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowRaw((v) => !v)}
+                    aria-expanded={showRaw}
+                    className="flex items-center gap-1.5 font-mono-meta text-[var(--color-fg-dim)] transition-colors hover:text-[var(--color-fg)]"
+                  >
+                    <span
+                      aria-hidden
+                      className="inline-block transition-transform duration-200"
+                      style={{ transform: showRaw ? "rotate(90deg)" : "rotate(0deg)" }}
+                    >
+                      ▸
+                    </span>
+                    {showRaw ? "hide raw payload" : "view raw payload"}
+                  </button>
+                  <div
+                    className="mt-2 grid transition-[grid-template-rows] duration-[220ms]"
+                    style={{
+                      gridTemplateRows: showRaw ? "1fr" : "0fr",
+                      transitionTimingFunction: "cubic-bezier(0.165, 0.84, 0.44, 1)",
+                    }}
+                  >
+                    <div className="min-h-0 overflow-hidden">
+                      <pre className="max-h-[280px] overflow-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-3 py-2.5 font-mono text-[11.5px] leading-[1.5] text-[var(--color-fg-muted)] whitespace-pre-wrap break-all">
+                        {formatRaw(parsed.raw)}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <pre className="overflow-auto px-4 py-3 font-mono text-[12px] text-[var(--color-fg-muted)] whitespace-pre-wrap break-all">
+                {parsed.raw}
+              </pre>
+            )}
+          </div>
         </div>
-      ) : (
-        <pre className="overflow-auto px-4 py-3 font-mono text-[12px] text-[var(--color-fg-muted)] whitespace-pre-wrap">{parsed.raw}</pre>
-      )}
+      </div>
     </li>
   );
+}
+
+function formatRaw(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
 }
 
 function ArgsLine({ args }: { args: Record<string, unknown> }) {
