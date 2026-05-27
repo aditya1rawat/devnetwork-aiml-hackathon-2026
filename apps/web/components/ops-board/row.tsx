@@ -12,7 +12,7 @@ export function severityTone(severity: DemoScenario["severity"]): Tone {
 
 const TONE_COLOR: Record<Tone, string> = {
   ok: "var(--color-fg-dim)",
-  warn: "var(--color-shadow-prov)",
+  warn: "var(--color-warn)",
   critical: "var(--color-danger)",
 };
 
@@ -33,10 +33,10 @@ export function OpsRow({ scenario }: { scenario: DemoScenario }) {
   const color = TONE_COLOR[tone];
 
   return (
-    <div className="group grid grid-cols-[28px_minmax(0,1fr)_auto] gap-x-5 gap-y-1 border-t border-[var(--color-border)] px-6 py-5 transition-colors hover:bg-[var(--color-surface)]/40">
+    <div className="group grid grid-cols-[28px_minmax(0,1fr)_auto] gap-x-5 gap-y-1 border-t border-[var(--color-border)] px-6 py-5 transition-colors hover:bg-[var(--color-surface)]">
       <div
         aria-hidden
-        className="row-start-1 col-start-1 flex h-[22px] items-center justify-center text-[14px] leading-none"
+        className="row-start-1 col-start-1 flex h-[22px] items-center justify-center text-[18px] leading-none"
         style={{ color }}
         title={TONE_LABEL[tone]}
       >
@@ -44,11 +44,11 @@ export function OpsRow({ scenario }: { scenario: DemoScenario }) {
       </div>
 
       <div className="row-start-1 col-start-2 flex flex-wrap items-baseline gap-x-2">
-        <span className="font-serif-display text-[16px] italic text-[var(--color-fg-muted)]">
-          {scenario.productLabel.toLowerCase()}
+        <span className="font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-fg-muted)]">
+          {scenario.productLabel}
         </span>
         <span className="text-[var(--color-fg-dim)]">·</span>
-        <span className="text-[16px] font-light text-[var(--color-fg)]">
+        <span className="text-[16px] font-normal text-[var(--color-fg)] font-display">
           {scenario.title}
         </span>
       </div>
@@ -71,12 +71,12 @@ export function OpsRow({ scenario }: { scenario: DemoScenario }) {
         </span>
       </div>
 
-      <div className="row-start-2 col-start-3 flex items-center gap-2">
+      <div className="row-start-2 col-start-3 flex items-stretch">
         <Link
           href={`/status/${scenario.id}`}
-          className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border-strong)] px-2.5 py-1 font-mono-label text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-fg-muted)] hover:text-[var(--color-fg)]"
+          className="inline-flex h-8 items-center justify-center border border-[var(--color-border-strong)] bg-transparent px-4 font-mono text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--color-fg)] transition-colors hover:border-[var(--color-fg)] hover:bg-[var(--color-surface)]"
         >
-          inspect <span aria-hidden>→</span>
+          inspect <span aria-hidden className="ml-1.5">→</span>
         </Link>
         <PageArgusButton scenario={scenario.id} />
       </div>

@@ -35,14 +35,15 @@ export function PageArgusButton({ scenario }: { scenario: string }) {
         onClick={onClick}
         disabled={busy}
         aria-busy={busy || undefined}
-        className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-[12px] font-medium uppercase tracking-[0.18em] text-[var(--color-bg)] transition-opacity hover:opacity-90 disabled:opacity-60"
+        className="inline-flex h-8 cursor-pointer items-center justify-center bg-[var(--color-fg)] px-4 font-mono text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--color-bg)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "paging…" : "page argus"}
       </button>
       {error ? (
         <span
           role="alert"
-          className="font-mono-meta text-[10.5px] uppercase tracking-[0.14em] text-[var(--color-danger)]"
+          className="font-mono text-[10.5px] uppercase tracking-[0.14em]"
+          style={{ color: "var(--color-danger)" }}
         >
           {error}
         </span>
