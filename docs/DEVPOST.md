@@ -37,7 +37,7 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 - **MCP servers** wrap our (mock) observability stack: logs / metrics / traces / runbook / incident-kb. Each is wrapped with retry + circuit breaker + synthetic-response fallback.
 - **Incident Knowledge Base** built on Python FastAPI, backed by Neo4j + Graphiti. Ontology: incidents → services → root causes → remediations, with bi-temporal edges. MCP tool for agent retrieval, admin API for ingest/seed/reset.
 - **Python FastAPI** mock service cluster (api / worker / db_proxy / auth) with chaos injection endpoints.
-- **Ridgeline app** — 4 surfaces (Overview dashboard, Sign In, Query Studio, Batch Jobs), each with an embedded fault trigger and Argus launcher overlay.
+- **Ridgeline app** with 4 surfaces (Overview dashboard, Sign In, Query Studio, Batch Jobs), each with an embedded fault trigger and Argus launcher overlay.
 
 ### Challenges we ran into
 
