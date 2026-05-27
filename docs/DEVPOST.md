@@ -6,7 +6,7 @@
 
 ## b. Elevator Pitch
 
-Highly-available web servers run on N machines. Why don't agents? Argus is a dual-cognition SRE agent that investigates production incidents autonomously, survives infrastructure chaos, and learns from every incident it closes.
+HA web servers run on N machines. Why don't agents? Argus is a dual-cognition SRE agent that investigates incidents autonomously, survives infrastructure chaos, and learns from every case it closes.
 
 ## c. Created By - Aditya Rawat
 
