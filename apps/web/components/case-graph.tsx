@@ -236,7 +236,6 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
 function FocusNode({ label, x, y }: { label: string; x: number; y: number }) {
   return (
     <div className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={{ left: x, top: y }}>
-      <span className="absolute left-1/2 top-1/2 h-[150px] w-[150px] -translate-x-1/2 -translate-y-1/2 animate-[cg-pulse_3.4s_ease-in-out_infinite] rounded-full bg-[var(--color-primary)]/10" />
       <div
         className="relative flex max-w-[230px] flex-col items-center gap-1 rounded-xl border border-[var(--color-primary)]/70 bg-[var(--color-primary-soft)]/35 px-4 py-2.5"
         style={{ boxShadow: "0 0 0 1px color-mix(in oklch, var(--color-primary) 35%, transparent), 0 0 36px -8px var(--color-primary)" }}
@@ -244,7 +243,6 @@ function FocusNode({ label, x, y }: { label: string; x: number; y: number }) {
         <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-[var(--color-primary)]">this incident</span>
         <span className="text-center font-mono text-[12px] leading-tight text-[var(--color-fg)]">{label}</span>
       </div>
-      <style>{`@keyframes cg-pulse { 0%,100% { opacity: 0.5; transform: translate(-50%,-50%) scale(0.9); } 50% { opacity: 1; transform: translate(-50%,-50%) scale(1.1); } }`}</style>
     </div>
   );
 }

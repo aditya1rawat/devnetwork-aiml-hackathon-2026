@@ -38,7 +38,7 @@ export function FinalReport({ events, incidentId }: { events: StreamEvent[]; inc
 
         <section className="mt-10 border-t border-[var(--color-border)] pt-6">
           <header className="mb-4 flex items-baseline justify-between gap-4">
-            <h3 className="font-mono-label text-[var(--color-fg-dim)]">prior cases consulted</h3>
+            <h3 className="font-mono-label text-[var(--color-fg-dim)]">knowledge graph neighborhood</h3>
             <button
               type="button"
               onClick={() => setFullscreen(true)}

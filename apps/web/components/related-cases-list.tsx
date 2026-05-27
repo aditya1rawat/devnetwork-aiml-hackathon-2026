@@ -34,20 +34,23 @@ export function RelatedCasesList({ events }: { events: StreamEvent[] }) {
   if (rows.length === 0) return null;
 
   return (
-    <ul className="mt-4 space-y-2">
-      {rows.map((r) => (
-        <li key={r.incidentId} className="flex items-baseline gap-3">
-          <span className="font-mono-label text-[var(--color-fg-dim)]">↳</span>
-          <a
-            href={`/incident/${r.incidentId}`}
-            target="_blank"
-            rel="noreferrer"
-            className="font-mono text-[13px] text-[var(--color-fg-muted)] underline-offset-4 hover:underline hover:text-[var(--color-fg)]"
-          >
-            {r.incidentId}
-          </a>
-        </li>
-      ))}
-    </ul>
+    <>
+      <h4 className="mb-3 mt-6 font-mono-label text-[var(--color-fg-dim)]">consulted this run</h4>
+      <ul className="space-y-2">
+        {rows.map((r) => (
+          <li key={r.incidentId} className="flex items-baseline gap-3">
+            <span className="font-mono-label text-[var(--color-fg-dim)]">↳</span>
+            <a
+              href={`/incident/${r.incidentId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="font-mono text-[13px] text-[var(--color-fg-muted)] underline-offset-4 hover:underline hover:text-[var(--color-fg)]"
+            >
+              {r.incidentId}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
