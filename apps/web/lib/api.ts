@@ -35,6 +35,13 @@ export interface DemoScenario {
   params: Record<string, number>;
   durationS: number;
   warmupS: number;
+  service: string;
+  severity: "sev1" | "sev2" | "sev3";
+  surfaceKey: string;
+  productLabel: string;
+  symptom: string;
+  metric: { label: string; value: string; trend: "up" | "down" };
+  sampleLog: string;
 }
 
 export interface IncidentSummary {
@@ -54,6 +61,11 @@ export async function listScenarios(): Promise<DemoScenario[]> {
   if (!r.ok) throw new Error(`scenarios ${r.status}`);
   const j = (await r.json()) as { scenarios: DemoScenario[] };
   return j.scenarios;
+}
+
+export async function getScenario(id: string): Promise<DemoScenario | null> {
+  const all = await listScenarios();
+  return all.find((s) => s.id === id) ?? null;
 }
 
 export async function startScenario(scenario: string): Promise<{ id: string }> {
