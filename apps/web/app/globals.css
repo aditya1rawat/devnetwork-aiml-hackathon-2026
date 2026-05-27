@@ -23,6 +23,30 @@
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --font-serif: var(--font-serif), "Iowan Old Style", "Apple Garamond", Georgia, serif;
+
+  /* shadcn/ui token aliases — bridge our Argus palette into shadcn's expected token names
+     so primitives like Button, Card, Tabs render with our OKLCH theme without overrides. */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-fg);
+  --color-popover: var(--color-surface-2);
+  --color-popover-foreground: var(--color-fg);
+  --color-primary-foreground: oklch(0.16 0.012 270);
+  --color-secondary: var(--color-surface-2);
+  --color-secondary-foreground: var(--color-fg);
+  --color-muted: var(--color-surface-2);
+  --color-muted-foreground: var(--color-fg-muted);
+  --color-accent: var(--color-surface-2);
+  --color-accent-foreground: var(--color-fg);
+  --color-destructive: var(--color-danger);
+  --color-destructive-foreground: oklch(0.98 0.005 270);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-primary);
+  --radius-sm: calc(0.5rem - 4px);
+  --radius-md: calc(0.5rem - 2px);
+  --radius-lg: 0.5rem;
+  --radius-xl: calc(0.5rem + 4px);
 }
 
 html, body {
