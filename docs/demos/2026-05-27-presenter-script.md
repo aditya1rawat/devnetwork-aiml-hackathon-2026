@@ -2,7 +2,7 @@
 
 A spoken-word runbook for the live demo. `[DO]` = what you click. `[SAY]` = what you say. Target length ~5–6 min. Trim acts 4–5 if you're short on time.
 
-> Two tabs open before you start: **Ridgeline** (`http://localhost:3001`) and **Argus** (`http://localhost:3000/dashboard`). KB pre-seeded. Don't seed live.
+> Three tabs open before you start: **Ridgeline** (`http://localhost:3001`), **Argus** (`http://localhost:3000/dashboard`), and **Neo4j Browser** (`http://localhost:7474`, run `MATCH (n)-[r]->(m) RETURN n, r, m` so the graph **with edges** is already rendered for Act 4.5). KB pre-seeded. Don't seed live.
 
 ---
 
@@ -75,6 +75,16 @@ A spoken-word runbook for the live demo. `[DO]` = what you click. `[SAY]` = what
 `[DO]` Let it resolve. Scroll to the final report's **case graph**. Click **⛶ fullscreen**.
 
 `[SAY]` "Here's the bi-temporal knowledge graph. This incident at the center, prior worker-memory cases as neighbors, the shared service node, the root-cause node. And when this incident resolves, it gets ingested right back in — so the next investigation is smarter. Resolve, ingest, retrieve, with no human curating anything."
+
+---
+
+## Act 4.5 — Under the hood: the graph itself (10s)
+
+`[DO]` Flip to the **Neo4j Browser** tab (`localhost:7474`) showing `MATCH (n)-[r]->(m) RETURN n, r, m` — nodes **and** the typed edges between them. Hold it ~10s. Let the connected graph and the left-hand schema panel read. (`MATCH (n) RETURN n` shows nodes only — return `r` to draw edges, or use the "Connect result nodes" toggle.)
+
+`[SAY]` "And this is the store underneath it — Neo4j, built with Graphiti. It's a real bi-temporal graph: incidents, services, root causes, and remediations as typed nodes, linked by typed relationships, every edge stamped with when it was valid. That panel on the left is the live schema — Incident, Service, Remediation nodes; RELATES_TO and MENTIONS edges; valid_at / invalid_at timestamps. This isn't a vector blob — it's queryable structure that compounds with every incident Argus closes."
+
+> Numbers on screen for reference: ~48 nodes, ~118 relationships (Entity, Episodic, Incident, Remediation, Service node types). Don't dwell — it's a 10-second "this is real" beat, then move on.
 
 ---
 
