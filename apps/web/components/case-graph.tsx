@@ -13,15 +13,45 @@ import { getCaseGraph, type CaseGraph as CaseGraphData } from "@/lib/api";
  * become the edge label rather than their own nodes.
  */
 
+interface SharedEntity {
+  label: string;
+  type: string;
+}
+
 interface RelatedCase {
   incidentId: string;
   label: string;
-  shared: string[];
+  shared: SharedEntity[];
 }
 
 interface Derived {
   focusLabel: string;
   related: RelatedCase[];
+}
+
+// Human phrasing for each shared-entity kind, used to explain why two cases
+// relate on the connecting edge.
+const RELATION_WORD: Record<string, string> = {
+  service: "service",
+  root_cause: "root cause",
+  remediation: "fix",
+  other: "entity",
+};
+
+/** Build a verbose edge label grouped by relation kind, e.g.
+ * "service: db_proxy, api · fix: query batch". */
+function describeShared(shared: SharedEntity[]): string {
+  const order = ["service", "root_cause", "remediation", "other"];
+  const byType = new Map<string, string[]>();
+  for (const s of shared) {
+    const arr = byType.get(s.type) ?? [];
+    if (!arr.includes(s.label)) arr.push(s.label);
+    byType.set(s.type, arr);
+  }
+  return order
+    .filter((t) => byType.has(t))
+    .map((t) => `${RELATION_WORD[t] ?? t}: ${byType.get(t)!.join(", ")}`)
+    .join(" · ");
 }
 
 function bestLabel(candidates: string[], incidentId: string): string {
@@ -51,16 +81,17 @@ function derive(data: CaseGraphData): Derived {
   );
 
   // Group incident-typed nodes by their real incident_id.
-  const groups = new Map<string, { labels: string[]; shared: Set<string> }>();
+  const groups = new Map<string, { labels: string[]; shared: Map<string, SharedEntity> }>();
   for (const n of data.nodes) {
     if (n.type !== "incident") continue;
     const iid = String(n.meta?.incident_id ?? "");
     if (!iid || iid === focusIncidentId) continue; // drop self-referential entities
-    const g = groups.get(iid) ?? { labels: [], shared: new Set<string>() };
+    const g = groups.get(iid) ?? { labels: [], shared: new Map<string, SharedEntity>() };
     g.labels.push(n.label);
     for (const nb of adj.get(n.id) ?? []) {
-      const lbl = byId.get(nb)?.label;
-      if (lbl && focusEntityLabels.has(lbl)) g.shared.add(lbl);
+      const node = byId.get(nb);
+      const lbl = node?.label;
+      if (lbl && focusEntityLabels.has(lbl)) g.shared.set(lbl, { label: lbl, type: node!.type });
     }
     groups.set(iid, g);
   }
@@ -69,7 +100,7 @@ function derive(data: CaseGraphData): Derived {
     .map(([incidentId, g]) => ({
       incidentId,
       label: bestLabel(g.labels, incidentId),
-      shared: [...g.shared],
+      shared: [...g.shared.values()],
     }))
     .sort((a, b) => b.shared.length - a.shared.length)
     .slice(0, 8);
@@ -185,19 +216,16 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
           </svg>
 
           {layout.nodes.map((node) => {
-            const chip = node.shared[0];
-            if (!chip) return null;
+            if (node.shared.length === 0) return null;
             const lx = layout.cx + (node.x - layout.cx) * 0.62;
             const ly = layout.cy + (node.y - layout.cy) * 0.62;
-            const extra = node.shared.length - 1;
             return (
               <span
                 key={`label-${node.incidentId}`}
-                className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-fg-dim)]"
+                className="pointer-events-none absolute max-w-[170px] -translate-x-1/2 -translate-y-1/2 text-balance rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-center font-mono text-[10px] leading-[1.35] text-[var(--color-fg-dim)]"
                 style={{ left: lx, top: ly }}
               >
-                {chip}
-                {extra > 0 ? <span className="opacity-60"> +{extra}</span> : null}
+                {describeShared(node.shared)}
               </span>
             );
           })}
