@@ -32,19 +32,34 @@ interface DemoScenario {
   params: Record<string, number>;
   durationS: number;
   warmupS: number;
+  // Display metadata for the ops board + distress surfaces.
+  service: string;
+  severity: "sev1" | "sev2" | "sev3";
+  surfaceKey: string;
+  productLabel: string;
+  symptom: string;
+  metric: { label: string; value: string; trend: "up" | "down" };
+  sampleLog: string;
 }
 
 const DEMO_SCENARIOS: Record<string, DemoScenario> = {
   "worker-oom": {
     id: "worker-oom",
     title: "Worker OOM",
-    blurb: "Worker process leaking 120MB/tick — heap exhaustion causing the job queue to back up.",
+    blurb: "Worker process leaking 120MB/tick — heap exhaustion backing up the job queue.",
     rootCause: "memleak on worker",
     chaosType: "memleak",
     target: "worker",
     params: { mb_per_tick: 120 },
     durationS: 120,
     warmupS: 10,
+    service: "worker",
+    severity: "sev2",
+    surfaceKey: "batch-console",
+    productLabel: "Batch Jobs",
+    symptom: "Worker heap climbing, job queue backing up",
+    metric: { label: "heap_used", value: "92%", trend: "up" },
+    sampleLog: "worker-3 heap_used=3.8GB queue_depth=11820",
   },
   "db-saturation": {
     id: "db-saturation",
@@ -56,6 +71,85 @@ const DEMO_SCENARIOS: Record<string, DemoScenario> = {
     params: { ms: 1500 },
     durationS: 120,
     warmupS: 3,
+    service: "db_proxy",
+    severity: "sev1",
+    surfaceKey: "query-studio",
+    productLabel: "Query Studio",
+    symptom: "Query p99 at 1.5s, connection pool saturating",
+    metric: { label: "pool_wait_p99", value: "1.5s", trend: "up" },
+    sampleLog: "db pool exhausted inflight=16",
+  },
+  "auth-5xx": {
+    id: "auth-5xx",
+    title: "Auth 5xx Storm",
+    blurb: "auth service throwing 503s on ~50% of verify calls — users bounced at sign-in.",
+    rootCause: "error_5xx on auth",
+    chaosType: "error_5xx",
+    target: "auth",
+    params: { rate: 0.5 },
+    durationS: 120,
+    warmupS: 3,
+    service: "auth",
+    severity: "sev1",
+    surfaceKey: "sign-in",
+    productLabel: "Sign In",
+    symptom: "Logins failing, 503 rate climbing on auth",
+    metric: { label: "auth_503_rate", value: "48%", trend: "up" },
+    sampleLog: "chaos: 5xx injected path=/verify",
+  },
+  "api-brownout": {
+    id: "api-brownout",
+    title: "API Brownout",
+    blurb: "api latency spiking under load — requests piling inflight, pages timing out.",
+    rootCause: "cpu_saturation on api",
+    chaosType: "latency",
+    target: "api",
+    params: { mean_ms: 1200 },
+    durationS: 120,
+    warmupS: 3,
+    service: "api",
+    severity: "sev2",
+    surfaceKey: "app-dashboard",
+    productLabel: "Dashboard",
+    symptom: "App slow, requests piling inflight",
+    metric: { label: "req_p99", value: "1.2s", trend: "up" },
+    sampleLog: "api inflight=42 latency_p99=1180ms",
+  },
+  "db-timeout": {
+    id: "db-timeout",
+    title: "Upstream Timeouts",
+    blurb: "db_proxy stalling 2.5s/call — api requests timing out, partition-like symptoms.",
+    rootCause: "network_partition between api and db_proxy",
+    chaosType: "latency",
+    target: "db_proxy",
+    params: { mean_ms: 2500 },
+    durationS: 120,
+    warmupS: 3,
+    service: "db_proxy",
+    severity: "sev2",
+    surfaceKey: "connections",
+    productLabel: "Connections",
+    symptom: "Upstream db calls timing out from api",
+    metric: { label: "db_timeout_rate", value: "31%", trend: "up" },
+    sampleLog: "worker failed err=ReadTimeout job=...",
+  },
+  "api-config-drift": {
+    id: "api-config-drift",
+    title: "Bad Config Deploy",
+    blurb: "a config revision flipped api routing to invalid — error spike right after deploy.",
+    rootCause: "config_drift on api",
+    chaosType: "config_drift",
+    target: "api",
+    params: { rate: 0.45, revision: 47 },
+    durationS: 120,
+    warmupS: 3,
+    service: "api",
+    severity: "sev1",
+    surfaceKey: "deploys",
+    productLabel: "Deploys",
+    symptom: "Error spike immediately after config revision 47",
+    metric: { label: "error_rate", value: "44%", trend: "up" },
+    sampleLog: "config revision 47 applied: routing=invalid pool_size=0",
   },
 };
 
@@ -110,6 +204,10 @@ export function buildApp(deps: AppDeps) {
   const SEVERITY_BY_SCENARIO: Record<string, "sev1" | "sev2" | "sev3"> = {
     "worker-oom": "sev2",
     "db-saturation": "sev1",
+    "auth-5xx": "sev1",
+    "api-brownout": "sev2",
+    "db-timeout": "sev2",
+    "api-config-drift": "sev1",
   };
 
   const KNOWN_SERVICES = new Set(["worker", "db_proxy", "auth", "gateway", "api"]);
