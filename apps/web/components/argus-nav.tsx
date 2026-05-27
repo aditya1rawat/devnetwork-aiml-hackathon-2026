@@ -4,7 +4,7 @@ type NavKey = "dashboard" | "incidents" | null;
 
 export function ArgusNav({ active = null }: { active?: NavKey }) {
   return (
-    <header className="border-b border-[var(--color-border)]">
+    <header className="relative border-b border-[var(--color-border)]">
       <div className="flex h-14 items-center gap-8 px-7">
         <Link
           href="/"

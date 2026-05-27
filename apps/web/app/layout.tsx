@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif, DM_Sans } from "next/font/google";
+import NextTopLoader from "nextjs-toploader";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
@@ -42,6 +43,15 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} ${dmSans.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <NextTopLoader
+          color="var(--color-fg)"
+          height={2}
+          shadow="0 0 8px var(--color-fg)"
+          showSpinner={false}
+          crawlSpeed={220}
+          speed={220}
+          zIndex={50}
+        />
         <TooltipProvider delayDuration={150}>{children}</TooltipProvider>
       </body>
     </html>

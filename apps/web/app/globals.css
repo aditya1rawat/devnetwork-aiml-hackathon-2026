@@ -95,6 +95,11 @@ html, body {
   font-feature-settings: "tnum";
 }
 
+/* nextjs-toploader: sit just below the 56px nav instead of the page top. */
+#nprogress .bar {
+  top: 56px !important;
+}
+
 ::selection {
   background: var(--color-fg);
   color: var(--color-bg);

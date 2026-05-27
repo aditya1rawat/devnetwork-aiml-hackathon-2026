@@ -25,27 +25,6 @@ export default async function StatusPage() {
     <main className="flex min-h-screen flex-col bg-[var(--color-bg)] text-[var(--color-fg)]">
       <ArgusNav active="dashboard" />
 
-      <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="flex h-7 items-center gap-3 px-7 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
-          <span
-            aria-hidden
-            className="inline-block h-2 w-2"
-            style={{
-              background: tally.critical > 0 ? "var(--color-danger)" : tally.warn > 0 ? "var(--color-warn)" : "var(--color-fg-dim)",
-              boxShadow: tally.critical > 0
-                ? "0 0 0 1px color-mix(in oklch, var(--color-danger) 60%, transparent)"
-                : tally.warn > 0
-                ? "0 0 0 1px color-mix(in oklch, var(--color-warn) 60%, transparent)"
-                : undefined,
-            }}
-          />
-          <span className="text-[var(--color-fg)]">STATUS:&nbsp;{tally.critical > 0 ? "DEGRADED" : tally.warn > 0 ? "WARN" : "OK"}</span>
-          <span className="text-[var(--color-fg-dim)]">·</span>
-          <span className="text-[var(--color-fg)]">{scenarios.length} OBSERVED SURFACES</span>
-          <span className="ml-auto text-[var(--color-fg-dim)]">REGION&nbsp;·&nbsp;US-EAST-2</span>
-        </div>
-      </section>
-
       <section className="px-7 pt-12 pb-6">
         <div className="mx-auto max-w-[1320px]">
           <p className="font-mono-label text-[var(--color-fg-dim)]">argus / dashboard</p>
@@ -68,6 +47,31 @@ export default async function StatusPage() {
 
           <aside className="space-y-7">
             <div className="space-y-3">
+              <p className="font-mono-label text-[var(--color-fg-dim)]">System</p>
+              <div className="space-y-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em]">
+                <div className="flex items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="inline-block h-2 w-2"
+                    style={{
+                      background: tally.critical > 0 ? "var(--color-danger)" : tally.warn > 0 ? "var(--color-warn)" : "var(--color-fg-dim)",
+                      boxShadow: tally.critical > 0
+                        ? "0 0 0 1px color-mix(in oklch, var(--color-danger) 60%, transparent)"
+                        : tally.warn > 0
+                        ? "0 0 0 1px color-mix(in oklch, var(--color-warn) 60%, transparent)"
+                        : undefined,
+                    }}
+                  />
+                  <span className="text-[var(--color-fg)]">
+                    STATUS:&nbsp;{tally.critical > 0 ? "DEGRADED" : tally.warn > 0 ? "WARN" : "OK"}
+                  </span>
+                </div>
+                <div className="text-[var(--color-fg-muted)]">{scenarios.length} OBSERVED SURFACES</div>
+                <div className="text-[var(--color-fg-dim)]">REGION&nbsp;·&nbsp;US-EAST-2</div>
+              </div>
+            </div>
+
+            <div className="space-y-3 border-t border-[var(--color-border)] pt-7">
               <p className="font-mono-label text-[var(--color-fg-dim)]">Severity</p>
               <div className="space-y-2">
                 <RollupLine tone="critical" count={tally.critical} label="critical" />
