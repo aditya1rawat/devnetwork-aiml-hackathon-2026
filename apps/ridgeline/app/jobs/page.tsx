@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BrandChrome } from "@/components/brand";
 import { useFault } from "@/lib/fault-context";
+import { isPresetFault } from "@/lib/utils";
 
 type Tone = "ok" | "warn" | "danger";
 interface Worker {
@@ -22,6 +23,19 @@ const INITIAL: Worker[] = [
   { id: "worker-4", heap: 0.38, queue: 198, status: "ok", started: "08:42" },
 ];
 
+const OOM_STATE: Worker[] = [
+  { id: "worker-1", heap: 0.41, queue: 240, status: "ok", started: "08:42" },
+  { id: "worker-2", heap: 0.74, queue: 1900, status: "warn", started: "08:42" },
+  { id: "worker-3", heap: 0.99, queue: 11820, status: "danger", started: "08:42" },
+  { id: "worker-4", heap: 0.38, queue: 198, status: "ok", started: "08:42" },
+];
+
+const OOM_FAULT = {
+  scenario: "worker-oom",
+  service: "worker",
+  symptom: "Worker heap climbing, job queue backing up",
+} as const;
+
 const BAR_COLOR: Record<Tone, string> = {
   ok: "var(--brand-accent)",
   warn: "oklch(0.84 0.14 80)",
@@ -36,6 +50,15 @@ export default function JobsPage() {
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
+    if (isPresetFault()) {
+      setWorkers(OOM_STATE);
+      setOom(true);
+      if (!raised.current) {
+        raised.current = true;
+        raise(OOM_FAULT);
+      }
+      return;
+    }
     timer.current = window.setInterval(() => {
       setWorkers((prev) =>
         prev.map((w) => {
@@ -56,7 +79,7 @@ export default function JobsPage() {
     return () => {
       if (timer.current) window.clearInterval(timer.current);
     };
-  }, []);
+  }, [raise]);
 
   useEffect(() => {
     const w3 = workers.find((w) => w.id === "worker-3");
@@ -64,11 +87,7 @@ export default function JobsPage() {
       raised.current = true;
       setOom(true);
       if (timer.current) window.clearInterval(timer.current);
-      raise({
-        scenario: "worker-oom",
-        service: "worker",
-        symptom: "Worker heap climbing, job queue backing up",
-      });
+      raise(OOM_FAULT);
     }
   }, [workers, raise]);
 

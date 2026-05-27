@@ -1,16 +1,31 @@
 "use client";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { BrandChrome, BrandButton } from "@/components/brand";
 import { useFault } from "@/lib/fault-context";
+import { isPresetFault } from "@/lib/utils";
 
 type Phase = "idle" | "signing" | "failed";
 
 const mono: React.CSSProperties = { fontFamily: "var(--brand-font-mono)" };
 
+const AUTH_FAULT = {
+  scenario: "auth-5xx",
+  service: "auth",
+  symptom: "Logins failing, 503 rate climbing on auth",
+} as const;
+
 export default function LoginPage() {
   const { raise } = useFault();
   const [phase, setPhase] = useState<Phase>("idle");
   const raised = useRef(false);
+
+  useEffect(() => {
+    if (isPresetFault() && !raised.current) {
+      raised.current = true;
+      setPhase("failed");
+      raise(AUTH_FAULT);
+    }
+  }, [raise]);
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -20,11 +35,7 @@ export default function LoginPage() {
       setPhase("failed");
       if (!raised.current) {
         raised.current = true;
-        raise({
-          scenario: "auth-5xx",
-          service: "auth",
-          symptom: "Logins failing, 503 rate climbing on auth",
-        });
+        raise(AUTH_FAULT);
       }
     }, 700);
   }

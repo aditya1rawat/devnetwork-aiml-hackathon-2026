@@ -5,9 +5,9 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS: Array<{ label: string; href: string }> = [
   { label: "Overview", href: "/" },
   { label: "Pipelines", href: "/jobs" },
-  { label: "Connections", href: "/query" },
-  { label: "Deploys", href: "/" },
-  { label: "Settings", href: "/" },
+  { label: "Queries", href: "/query" },
+  { label: "Connections", href: "/connections" },
+  { label: "Deploys", href: "/deploys" },
 ];
 
 export function BrandChrome({

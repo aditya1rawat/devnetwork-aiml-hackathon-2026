@@ -2,6 +2,13 @@
 import { useEffect, useRef, useState } from "react";
 import { BrandChrome } from "@/components/brand";
 import { useFault } from "@/lib/fault-context";
+import { isPresetFault } from "@/lib/utils";
+
+const DB_FAULT = {
+  scenario: "db-saturation",
+  service: "db_proxy",
+  symptom: "Query p99 at 1.5s, connection pool saturating",
+} as const;
 
 type Phase = "idle" | "running" | "timeout";
 
@@ -40,11 +47,17 @@ export default function QueryPage() {
   const done = useRef<number | null>(null);
 
   useEffect(() => {
+    if (isPresetFault() && !raised.current) {
+      raised.current = true;
+      setPhase("timeout");
+      setElapsed(1.5);
+      raise(DB_FAULT);
+    }
     return () => {
       if (tick.current) window.clearInterval(tick.current);
       if (done.current) window.clearTimeout(done.current);
     };
-  }, []);
+  }, [raise]);
 
   function run() {
     if (phase === "running") return;
@@ -57,11 +70,7 @@ export default function QueryPage() {
       setPhase("timeout");
       if (!raised.current) {
         raised.current = true;
-        raise({
-          scenario: "db-saturation",
-          service: "db_proxy",
-          symptom: "Query p99 at 1.5s, connection pool saturating",
-        });
+        raise(DB_FAULT);
       }
     }, 2500);
   }

@@ -1,5 +1,4 @@
-import Link from "next/link";
-import type { DemoScenario } from "@/lib/api";
+import { ridgelineSurfaceUrl, type DemoScenario } from "@/lib/api";
 import { PageArgusButton } from "./page-argus-button";
 
 type Tone = "ok" | "warn" | "critical";
@@ -31,6 +30,9 @@ const TONE_LABEL: Record<Tone, string> = {
 export function OpsRow({ scenario }: { scenario: DemoScenario }) {
   const tone = severityTone(scenario.severity);
   const color = TONE_COLOR[tone];
+  const surfaceUrl = ridgelineSurfaceUrl(scenario.id);
+  const inspectClass =
+    "inline-flex h-8 items-center justify-center border border-[var(--color-border-strong)] bg-transparent px-4 font-mono text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--color-fg)] transition-colors hover:border-[var(--color-fg)] hover:bg-[var(--color-surface)]";
 
   return (
     <div className="group grid grid-cols-[28px_minmax(0,1fr)_auto] gap-x-5 gap-y-1 border-t border-[var(--color-border)] px-6 py-5 transition-colors hover:bg-[var(--color-surface)]">
@@ -72,12 +74,11 @@ export function OpsRow({ scenario }: { scenario: DemoScenario }) {
       </div>
 
       <div className="row-start-2 col-start-3 flex items-stretch">
-        <Link
-          href={`/status/${scenario.id}`}
-          className="inline-flex h-8 items-center justify-center border border-[var(--color-border-strong)] bg-transparent px-4 font-mono text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--color-fg)] transition-colors hover:border-[var(--color-fg)] hover:bg-[var(--color-surface)]"
-        >
-          inspect <span aria-hidden className="ml-1.5">→</span>
-        </Link>
+        {surfaceUrl ? (
+          <a href={surfaceUrl} className={inspectClass}>
+            inspect <span aria-hidden className="ml-1.5">→</span>
+          </a>
+        ) : null}
         <PageArgusButton scenario={scenario.id} />
       </div>
     </div>

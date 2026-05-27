@@ -1,4 +1,22 @@
 const ORCH = process.env.NEXT_PUBLIC_ORCH_URL ?? "http://127.0.0.1:7200";
+const RIDGELINE = process.env.NEXT_PUBLIC_RIDGELINE_URL ?? "http://localhost:3001";
+
+// Scenario id → Ridgeline product surface route. Every scenario has one.
+const RIDGELINE_SURFACE: Record<string, string> = {
+  "worker-oom": "/jobs",
+  "db-saturation": "/query",
+  "auth-5xx": "/login",
+  "api-brownout": "/app",
+  "db-timeout": "/connections",
+  "api-config-drift": "/deploys",
+};
+
+// Deep-link to the Ridgeline surface in its pre-triggered error state, or null
+// when the scenario has no product surface.
+export function ridgelineSurfaceUrl(id: string): string | null {
+  const path = RIDGELINE_SURFACE[id];
+  return path ? `${RIDGELINE}${path}?fault=1` : null;
+}
 
 export async function startIncident(id: string) {
   const r = await fetch(`${ORCH}/incident/${id}/start`, { method: "POST" });
@@ -61,11 +79,6 @@ export async function listScenarios(): Promise<DemoScenario[]> {
   if (!r.ok) throw new Error(`scenarios ${r.status}`);
   const j = (await r.json()) as { scenarios: DemoScenario[] };
   return j.scenarios;
-}
-
-export async function getScenario(id: string): Promise<DemoScenario | null> {
-  const all = await listScenarios();
-  return all.find((s) => s.id === id) ?? null;
 }
 
 export async function startScenario(scenario: string): Promise<{ id: string }> {

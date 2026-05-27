@@ -85,9 +85,9 @@ def _ensure_worker() -> "asyncio.Queue[tuple[IncidentBundle, str]]":
 async def _worker() -> None:
     """Process ingests strictly one at a time.
 
-    Concurrent ingests saturate Gemini's per-minute window and starve each
-    other into endless retries. Serializing lets the window drain between
-    incidents so each extraction completes.
+    Concurrent ingests saturate the extraction provider's per-minute window
+    and starve each other into endless retries. Serializing lets the window
+    drain between incidents so each extraction completes.
     """
     assert _queue is not None
     while True:
