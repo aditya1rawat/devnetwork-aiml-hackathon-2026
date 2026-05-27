@@ -314,7 +314,7 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
     >
       {state === "loading" ? <Centered>loading case graph…</Centered> : null}
       {state === "error" ? <Centered>case graph unavailable: {err}</Centered> : null}
-      {state === "empty" ? <Centered>no prior cases yet — this incident will seed future runs</Centered> : null}
+      {state === "empty" ? <Centered>Incident seeding — knowledge graph will populate shortly</Centered> : null}
 
       {state === "ready" ? (
         <>
@@ -342,7 +342,7 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
           <Controls showInteractive={false} className="!border-[var(--color-border)] [&_button]:!border-[var(--color-border)] [&_button]:!bg-[var(--color-surface)] [&_button]:!fill-[var(--color-fg-muted)]" />
           {nodes.length <= 1 ? (
             <span className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 font-mono-meta text-[var(--color-fg-dim)]">
-              no linked prior cases yet
+              incident seeding — linked cases will appear shortly
             </span>
           ) : null}
         </ReactFlow>
