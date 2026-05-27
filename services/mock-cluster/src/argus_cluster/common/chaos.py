@@ -9,7 +9,7 @@ from . import state
 
 
 class ChaosSpec(BaseModel):
-    type: str        # latency | error_5xx | memleak | crash | slow_query
+    type: str        # latency | error_5xx | memleak | crash | slow_query | config_drift
     target: str      # service name (informational; the receiving svc applies)
     duration_s: float
     params: dict = {}
@@ -21,6 +21,15 @@ def inject(spec: ChaosSpec) -> None:
         "expires_at": time.time() + spec.duration_s,
         **spec.params,
     }
+    if spec.type == "config_drift":
+        from . import logs
+        rev = spec.params.get("revision", 1)
+        logs.emit(
+            "warn",
+            f"config revision {rev} applied: routing=invalid pool_size=0",
+            revision=rev,
+            target=spec.target,
+        )
 
 
 def clear() -> None:
@@ -47,6 +56,10 @@ async def apply(endpoint: str) -> None:
         rate = err.get("rate", 0.5)
         if random.random() < rate:
             raise HTTPException(status_code=503, detail="chaos: 5xx injected")
+    if (drift := _active("config_drift")) is not None:
+        rate = drift.get("rate", 0.4)
+        if random.random() < rate:
+            raise HTTPException(status_code=503, detail="chaos: config drift (invalid routing)")
     if (crash := _active("crash")) is not None:
         # one-shot crash
         state.get().chaos.pop("crash", None)
