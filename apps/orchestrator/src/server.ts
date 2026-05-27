@@ -276,7 +276,7 @@ export function buildApp(deps: AppDeps) {
       gateway: deps.gateway,
       pool: deps.pool,
       incidentId: id,
-      primaryModel: process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6",
+      primaryModel: process.env.CLAUDE_MODEL ?? "anthropic/claude-sonnet-4-6",
       shadowModel: process.env.NEMOTRON_MODEL ?? "nvidia/nemotron",
       maxSteps: 18,
       enableShadow: true,
@@ -376,7 +376,7 @@ export function buildApp(deps: AppDeps) {
     return c.json({ ok: true, id });
   });
 
-  const TRIAGE_MODEL = process.env.TRIAGE_MODEL ?? "claude-haiku-4-5-20251001";
+  const TRIAGE_MODEL = process.env.TRIAGE_MODEL ?? process.env.CLAUDE_MODEL ?? "anthropic/claude-sonnet-4-6";
 
   function fallbackTriage(cfg: DemoScenario): { diagnosis: string; suspectedRootCause: string } {
     return {
@@ -410,7 +410,14 @@ export function buildApp(deps: AppDeps) {
         maxTokens: 300,
         responseFormat: "json_object",
       });
-      const parsed = JSON.parse(res.text) as { diagnosis?: string; suspectedRootCause?: string };
+      // Some models wrap JSON in ```json fences or prose despite response_format,
+      // so pull out the first {...} block before parsing.
+      const fenced = res.text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      const candidate = fenced ? fenced[1] : res.text;
+      const start = candidate.indexOf("{");
+      const end = candidate.lastIndexOf("}");
+      const jsonText = start >= 0 && end > start ? candidate.slice(start, end + 1) : candidate;
+      const parsed = JSON.parse(jsonText) as { diagnosis?: string; suspectedRootCause?: string };
       if (!parsed.diagnosis || !parsed.suspectedRootCause) throw new Error("incomplete triage");
       return c.json({ diagnosis: parsed.diagnosis, suspectedRootCause: parsed.suspectedRootCause });
     } catch {
