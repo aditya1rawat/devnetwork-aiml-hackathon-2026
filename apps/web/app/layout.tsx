@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Serif, DM_Sans } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
@@ -20,6 +20,12 @@ const instrumentSerif = Instrument_Serif({
   style: ["normal", "italic"],
 });
 
+const dmSans = DM_Sans({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
 export const metadata: Metadata = {
   title: "Argus — autonomous on-call SRE",
   description: "Dual-cognition agent that survives the infrastructure chaos it is responding to.",
@@ -33,7 +39,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} ${dmSans.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <TooltipProvider delayDuration={150}>{children}</TooltipProvider>
