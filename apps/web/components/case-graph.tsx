@@ -1,16 +1,30 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import "@xyflow/react/dist/style.css";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  Handle,
+  Position,
+  useNodesState,
+  useEdgesState,
+  type Node,
+  type Edge,
+  type NodeProps,
+} from "@xyflow/react";
 import { getCaseGraph, type CaseGraph as CaseGraphData } from "@/lib/api";
 
-/** Prior-cases constellation.
+/** Prior-cases constellation, interactive.
  *
  * The KB hands back a 2-hop subgraph around the focus incident. graphiti's
  * extraction is loose: related cases show up as extracted `Incident` entity
  * nodes (not separate episodes), each tagged with a `meta.incident_id`. Many
- * are self-referential (they carry the focus's own id) or duplicated. So we
- * collapse the subgraph: group by `incident_id`, drop the focus's own id, and
- * draw one orbiting node per distinct related case. Shared services/causes
- * become the edge label rather than their own nodes.
+ * are self-referential or duplicated. So we collapse the subgraph: group by
+ * `incident_id`, drop the focus's own id, and lay one orbiting node per
+ * distinct related case around a focus center. Shared services/causes become
+ * the edge label. React Flow gives free pan, zoom, and node dragging while we
+ * supply custom node renderers that keep the bespoke pill styling.
  */
 
 interface SharedEntity {
@@ -29,8 +43,6 @@ interface Derived {
   related: RelatedCase[];
 }
 
-// Human phrasing for each shared-entity kind, used to explain why two cases
-// relate on the connecting edge.
 const RELATION_WORD: Record<string, string> = {
   service: "service",
   root_cause: "root cause",
@@ -38,8 +50,6 @@ const RELATION_WORD: Record<string, string> = {
   other: "entity",
 };
 
-/** Build a verbose edge label grouped by relation kind, e.g.
- * "service: db_proxy, api · fix: query batch". */
 function describeShared(shared: SharedEntity[]): string {
   const order = ["service", "root_cause", "remediation", "other"];
   const byType = new Map<string, string[]>();
@@ -55,7 +65,6 @@ function describeShared(shared: SharedEntity[]): string {
 }
 
 function bestLabel(candidates: string[], incidentId: string): string {
-  // Prefer a human title (has a space, isn't just the id echoed back).
   const title = candidates.find((c) => c.includes(" ") && !c.includes(incidentId));
   return title ?? incidentId;
 }
@@ -71,8 +80,6 @@ function derive(data: CaseGraphData): Derived {
 
   const focus = byId.get(data.focus_id);
   const focusIncidentId = String(focus?.meta?.incident_id ?? "");
-  // Entities the focus mentions (services, root causes, remediations) — the
-  // pool of things a related case can "share" with this one.
   const focusEntityIds = [...(adj.get(data.focus_id) ?? [])].filter(
     (id) => byId.get(id)?.type !== "incident",
   );
@@ -80,12 +87,11 @@ function derive(data: CaseGraphData): Derived {
     focusEntityIds.map((id) => byId.get(id)?.label).filter(Boolean) as string[],
   );
 
-  // Group incident-typed nodes by their real incident_id.
   const groups = new Map<string, { labels: string[]; shared: Map<string, SharedEntity> }>();
   for (const n of data.nodes) {
     if (n.type !== "incident") continue;
     const iid = String(n.meta?.incident_id ?? "");
-    if (!iid || iid === focusIncidentId) continue; // drop self-referential entities
+    if (!iid || iid === focusIncidentId) continue;
     const g = groups.get(iid) ?? { labels: [], shared: new Map<string, SharedEntity>() };
     g.labels.push(n.label);
     for (const nb of adj.get(n.id) ?? []) {
@@ -108,29 +114,85 @@ function derive(data: CaseGraphData): Derived {
   return { focusLabel: focusIncidentId || (focus?.label ?? "this incident"), related };
 }
 
-function useSize(ref: React.RefObject<HTMLDivElement | null>) {
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const r = entry.contentRect;
-      setSize({ w: r.width, h: r.height });
+// --- custom nodes ---------------------------------------------------------
+
+const hiddenHandle = { opacity: 0, width: 1, height: 1, minWidth: 1, minHeight: 1, border: "none" } as const;
+
+function FocusNodeView({ data }: NodeProps) {
+  const label = String((data as { label?: string }).label ?? "");
+  return (
+    <div
+      className="flex max-w-[230px] flex-col items-center gap-1 rounded-xl border border-[var(--color-primary)]/70 bg-[var(--color-primary-soft)]/35 px-4 py-2.5"
+      style={{ boxShadow: "0 0 0 1px color-mix(in oklch, var(--color-primary) 35%, transparent), 0 0 36px -8px var(--color-primary)" }}
+    >
+      <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-[var(--color-primary)]">this incident</span>
+      <span className="text-center font-mono text-[12px] leading-tight text-[var(--color-fg)]">{label}</span>
+      <Handle type="source" position={Position.Right} style={hiddenHandle} />
+      <Handle type="target" position={Position.Left} style={hiddenHandle} />
+    </div>
+  );
+}
+
+function RelatedNodeView({ data }: NodeProps) {
+  const d = data as { label?: string; incidentId?: string };
+  return (
+    <a
+      href={`/incident/${d.incidentId}`}
+      target="_blank"
+      rel="noreferrer"
+      className="group flex max-w-[180px] flex-col gap-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/90 px-3 py-2 text-left transition-[border-color,background-color] duration-200 hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-2)]"
+    >
+      <span className="truncate text-[12.5px] font-light leading-tight text-[var(--color-fg)]">{d.label}</span>
+      <span className="truncate font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-fg-dim)]">
+        {d.incidentId}
+      </span>
+      <Handle type="target" position={Position.Left} style={hiddenHandle} />
+      <Handle type="source" position={Position.Right} style={hiddenHandle} />
+    </a>
+  );
+}
+
+const nodeTypes = { focus: FocusNodeView, related: RelatedNodeView };
+
+function buildGraph(derived: Derived): { nodes: Node[]; edges: Edge[] } {
+  const n = derived.related.length;
+  // Virtual radial canvas; React Flow's fitView scales it to the container.
+  const rx = 360;
+  const ry = 230;
+  const nodes: Node[] = [
+    { id: "focus", type: "focus", position: { x: 0, y: 0 }, data: { label: derived.focusLabel }, draggable: true },
+  ];
+  const edges: Edge[] = [];
+  derived.related.forEach((r, i) => {
+    const angle = -Math.PI / 2 + (i * 2 * Math.PI) / Math.max(n, 1);
+    nodes.push({
+      id: r.incidentId,
+      type: "related",
+      position: { x: rx * Math.cos(angle), y: ry * Math.sin(angle) },
+      data: { label: r.label, incidentId: r.incidentId },
+      draggable: true,
     });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [ref]);
-  return size;
+    edges.push({
+      id: `edge-${r.incidentId}`,
+      source: "focus",
+      target: r.incidentId,
+      label: r.shared.length > 0 ? describeShared(r.shared) : undefined,
+      style: { stroke: "var(--color-border-strong)", strokeWidth: 1, strokeDasharray: "2 5" },
+      labelStyle: { fontFamily: "var(--font-mono)", fontSize: 10, fill: "var(--color-fg-dim)" },
+      labelBgStyle: { fill: "var(--color-bg)", fillOpacity: 0.95 },
+      labelBgPadding: [6, 3],
+      labelBgBorderRadius: 6,
+    });
+  });
+  return { nodes, edges };
 }
 
 export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; height?: number | string }) {
   const [data, setData] = useState<CaseGraphData | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  // Container is always mounted (states render as overlays inside it), so the
-  // ResizeObserver attaches on first paint instead of racing the fetch.
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { w, h } = useSize(containerRef);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   useEffect(() => {
     let alive = true;
@@ -152,24 +214,13 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
     };
   }, [incidentId]);
 
-  const derived = useMemo(() => (data ? derive(data) : null), [data]);
+  const built = useMemo(() => (data ? buildGraph(derive(data)) : null), [data]);
 
-  const layout = useMemo(() => {
-    if (!derived || w === 0 || h === 0) return null;
-    const cx = w / 2;
-    const cy = h / 2;
-    const n = derived.related.length;
-    // Elliptical orbit: the panel is wide and short, so a circle would cram
-    // nodes vertically and collide left/right pills with the center. Spread
-    // wide on x, modestly on y. Margins keep ~176px pills inside the frame.
-    const rx = Math.max(150, Math.min(w * 0.40, w / 2 - 100));
-    const ry = Math.max(70, Math.min(h * 0.38, h / 2 - 46));
-    const nodes = derived.related.map((r, i) => {
-      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / Math.max(n, 1);
-      return { ...r, x: cx + rx * Math.cos(angle), y: cy + ry * Math.sin(angle) };
-    });
-    return { cx, cy, nodes };
-  }, [derived, w, h]);
+  useEffect(() => {
+    if (!built) return;
+    setNodes(built.nodes);
+    setEdges(built.edges);
+  }, [built, setNodes, setEdges]);
 
   const state: "loading" | "error" | "empty" | "ready" = loading
     ? "loading"
@@ -181,7 +232,6 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
 
   return (
     <div
-      ref={containerRef}
       style={{ height }}
       className="relative overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]/60"
     >
@@ -189,88 +239,32 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
       {state === "error" ? <Centered>case graph unavailable: {err}</Centered> : null}
       {state === "empty" ? <Centered>no prior cases yet — this incident will seed future runs</Centered> : null}
 
-      {state === "ready" && layout ? (
-        <>
-          <svg className="absolute inset-0 h-full w-full" aria-hidden>
-            <defs>
-              <radialGradient id="cg-focus-glow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.18" />
-                <stop offset="55%" stopColor="var(--color-primary)" stopOpacity="0.05" />
-                <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0" />
-              </radialGradient>
-            </defs>
-            <circle cx={layout.cx} cy={layout.cy} r={Math.max(layout.cx, layout.cy)} fill="url(#cg-focus-glow)" />
-            {layout.nodes.map((node) => (
-              <line
-                key={`edge-${node.incidentId}`}
-                x1={layout.cx}
-                y1={layout.cy}
-                x2={node.x}
-                y2={node.y}
-                stroke="var(--color-border-strong)"
-                strokeWidth={1}
-                strokeDasharray="2 5"
-                strokeLinecap="round"
-              />
-            ))}
-          </svg>
-
-          {layout.nodes.map((node) => {
-            if (node.shared.length === 0) return null;
-            const lx = layout.cx + (node.x - layout.cx) * 0.62;
-            const ly = layout.cy + (node.y - layout.cy) * 0.62;
-            return (
-              <span
-                key={`label-${node.incidentId}`}
-                className="pointer-events-none absolute max-w-[170px] -translate-x-1/2 -translate-y-1/2 text-balance rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-center font-mono text-[10px] leading-[1.35] text-[var(--color-fg-dim)]"
-                style={{ left: lx, top: ly }}
-              >
-                {describeShared(node.shared)}
-              </span>
-            );
-          })}
-
-          {layout.nodes.map((node) => (
-            <a
-              key={`node-${node.incidentId}`}
-              href={`/incident/${node.incidentId}`}
-              target="_blank"
-              rel="noreferrer"
-              className="group absolute flex max-w-[176px] -translate-x-1/2 -translate-y-1/2 flex-col gap-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/90 px-3 py-2 text-left transition-[transform,border-color,background-color] duration-200 hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-2)]"
-              style={{ left: node.x, top: node.y, transitionTimingFunction: "cubic-bezier(0.22,1,0.36,1)" }}
-            >
-              <span className="truncate text-[12.5px] font-light leading-tight text-[var(--color-fg)]">
-                {node.label}
-              </span>
-              <span className="truncate font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-fg-dim)]">
-                {node.incidentId}
-              </span>
-            </a>
-          ))}
-
-          <FocusNode label={derived!.focusLabel} x={layout.cx} y={layout.cy} />
-
-          {derived!.related.length === 0 ? (
-            <span className="absolute bottom-3 left-1/2 -translate-x-1/2 font-mono-meta text-[var(--color-fg-dim)]">
+      {state === "ready" ? (
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.25 }}
+          minZoom={0.3}
+          maxZoom={2}
+          proOptions={{ hideAttribution: true }}
+          nodesConnectable={false}
+          elementsSelectable
+          panOnScroll
+          className="[&_.react-flow__edge-text]:font-mono"
+        >
+          <Background gap={18} color="var(--color-border)" />
+          <Controls showInteractive={false} className="!border-[var(--color-border)] [&_button]:!border-[var(--color-border)] [&_button]:!bg-[var(--color-surface)] [&_button]:!fill-[var(--color-fg-muted)]" />
+          {nodes.length <= 1 ? (
+            <span className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 font-mono-meta text-[var(--color-fg-dim)]">
               no linked prior cases yet
             </span>
           ) : null}
-        </>
+        </ReactFlow>
       ) : null}
-    </div>
-  );
-}
-
-function FocusNode({ label, x, y }: { label: string; x: number; y: number }) {
-  return (
-    <div className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={{ left: x, top: y }}>
-      <div
-        className="relative flex max-w-[230px] flex-col items-center gap-1 rounded-xl border border-[var(--color-primary)]/70 bg-[var(--color-primary-soft)]/35 px-4 py-2.5"
-        style={{ boxShadow: "0 0 0 1px color-mix(in oklch, var(--color-primary) 35%, transparent), 0 0 36px -8px var(--color-primary)" }}
-      >
-        <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-[var(--color-primary)]">this incident</span>
-        <span className="text-center font-mono text-[12px] leading-tight text-[var(--color-fg)]">{label}</span>
-      </div>
     </div>
   );
 }
