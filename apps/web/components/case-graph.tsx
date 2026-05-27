@@ -1,6 +1,6 @@
 "use client";
 import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -125,37 +125,49 @@ function derive(data: CaseGraphData): Derived {
 
 const hiddenHandle = { opacity: 0, width: 1, height: 1, minWidth: 1, minHeight: 1, border: "none" } as const;
 
+// Overshoot-and-settle. The keyed wrapper remounts whenever `bounce` changes
+// (on drag-stop) so the animation replays; it also runs once on mount as a
+// pop-in. `transform-box: fill-box` keeps the scale centered on the pill.
+const SETTLE = "cg-settle 440ms cubic-bezier(0.34, 1.56, 0.64, 1) both" as const;
+
 function FocusNodeView({ data }: NodeProps) {
-  const label = String((data as { label?: string }).label ?? "");
+  const d = data as { label?: string; bounce?: number };
   return (
-    <div
-      className="flex max-w-[230px] flex-col items-center gap-1 rounded-xl border border-[var(--color-primary)]/70 bg-[var(--color-primary-soft)]/35 px-4 py-2.5"
-      style={{ boxShadow: "0 0 0 1px color-mix(in oklch, var(--color-primary) 35%, transparent), 0 0 36px -8px var(--color-primary)" }}
-    >
-      <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-[var(--color-primary)]">this incident</span>
-      <span className="text-center font-mono text-[12px] leading-tight text-[var(--color-fg)]">{label}</span>
+    <>
+      <div
+        key={d.bounce ?? 0}
+        className="flex max-w-[230px] flex-col items-center gap-1 rounded-xl border border-[var(--color-primary)]/70 bg-[var(--color-primary-soft)]/35 px-4 py-2.5"
+        style={{ boxShadow: "0 0 0 1px color-mix(in oklch, var(--color-primary) 35%, transparent), 0 0 36px -8px var(--color-primary)", animation: SETTLE }}
+      >
+        <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-[var(--color-primary)]">this incident</span>
+        <span className="text-center font-mono text-[12px] leading-tight text-[var(--color-fg)]">{String(d.label ?? "")}</span>
+      </div>
       <Handle type="source" position={Position.Right} style={hiddenHandle} />
       <Handle type="target" position={Position.Left} style={hiddenHandle} />
-    </div>
+    </>
   );
 }
 
 function RelatedNodeView({ data }: NodeProps) {
-  const d = data as { label?: string; incidentId?: string };
+  const d = data as { label?: string; incidentId?: string; bounce?: number };
   return (
-    <a
-      href={`/incident/${d.incidentId}`}
-      target="_blank"
-      rel="noreferrer"
-      className="group flex max-w-[180px] flex-col gap-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/90 px-3 py-2 text-left transition-[border-color,background-color] duration-200 hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-2)]"
-    >
-      <span className="truncate text-[12.5px] font-light leading-tight text-[var(--color-fg)]">{d.label}</span>
-      <span className="truncate font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-fg-dim)]">
-        {d.incidentId}
-      </span>
+    <>
+      <a
+        key={d.bounce ?? 0}
+        href={`/incident/${d.incidentId}`}
+        target="_blank"
+        rel="noreferrer"
+        className="group flex max-w-[180px] flex-col gap-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/90 px-3 py-2 text-left transition-[border-color,background-color] duration-200 hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-2)]"
+        style={{ animation: SETTLE }}
+      >
+        <span className="truncate text-[12.5px] font-light leading-tight text-[var(--color-fg)]">{d.label}</span>
+        <span className="truncate font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-fg-dim)]">
+          {d.incidentId}
+        </span>
+      </a>
       <Handle type="target" position={Position.Left} style={hiddenHandle} />
       <Handle type="source" position={Position.Right} style={hiddenHandle} />
-    </a>
+    </>
   );
 }
 
@@ -274,6 +286,19 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
     setEdges(built.edges);
   }, [built, setNodes, setEdges]);
 
+  // Bump the dragged node's `bounce` so its view remounts and replays the
+  // overshoot-settle animation where it was dropped.
+  const onNodeDragStop = useCallback(
+    (_e: unknown, node: Node) => {
+      setNodes((ns) =>
+        ns.map((n) =>
+          n.id === node.id ? { ...n, data: { ...n.data, bounce: (Number(n.data.bounce) || 0) + 1 } } : n,
+        ),
+      );
+    },
+    [setNodes],
+  );
+
   const state: "loading" | "error" | "empty" | "ready" = loading
     ? "loading"
     : err
@@ -292,11 +317,14 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
       {state === "empty" ? <Centered>no prior cases yet — this incident will seed future runs</Centered> : null}
 
       {state === "ready" ? (
+        <>
+        <style>{`@keyframes cg-settle { 0% { transform: scale(0.82); } 60% { transform: scale(1.08); } 80% { transform: scale(0.97); } 100% { transform: scale(1); } }`}</style>
         <ReactFlow
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onNodeDragStop={onNodeDragStop}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           connectionMode={ConnectionMode.Loose}
@@ -318,6 +346,7 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
             </span>
           ) : null}
         </ReactFlow>
+        </>
       ) : null}
     </div>
   );
