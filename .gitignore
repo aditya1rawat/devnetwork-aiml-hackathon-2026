@@ -17,3 +17,6 @@ incident-ui-*.png
 
 # persisted Argus run logs (rehydrated on startup)
 apps/orchestrator/data/
+
+# brainstorming visual companion
+.superpowers/

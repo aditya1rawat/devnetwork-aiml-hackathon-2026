@@ -85,6 +85,30 @@ async def refresh_episode_content(incident_id: str, bundle: IncidentBundle) -> d
     return {"updated": updated}
 
 
+@app.delete("/admin/incident/{incident_id}")
+async def delete_incident(incident_id: str) -> dict:
+    """Remove a single incident's Episodic anchor from the graph.
+
+    Only the Episodic node + its relationships are detached; extracted entity
+    nodes are left in place because they may be shared with other incidents
+    (e.g. a duplicate run touching the same services). Returns how many anchors
+    were removed (0 if the id was not present).
+    """
+    name = f"incident:{incident_id}"
+    driver = await get_neo4j_driver()
+    cypher = """
+    MATCH (e:Episodic {name: $name, group_id: $gid})
+    WITH e, count(e) AS _c
+    DETACH DELETE e
+    RETURN _c AS deleted
+    """
+    async with driver.session() as session:
+        result = await session.run(cypher, name=name, gid=settings.graphiti_group_id)
+        record = await result.single()
+    deleted = record["deleted"] if record else 0
+    return {"deleted": deleted}
+
+
 @app.get("/incidents")
 async def list_incidents(provenance: str | None = None) -> dict:
     """List incidents in the KB, optionally filtered by provenance.
