@@ -4,13 +4,20 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   Background,
+  BaseEdge,
   Controls,
+  ConnectionMode,
+  EdgeLabelRenderer,
   Handle,
   Position,
+  getStraightPath,
+  useInternalNode,
   useNodesState,
   useEdgesState,
   type Node,
   type Edge,
+  type EdgeProps,
+  type InternalNode,
   type NodeProps,
 } from "@xyflow/react";
 import { getCaseGraph, type CaseGraph as CaseGraphData } from "@/lib/api";
@@ -154,6 +161,54 @@ function RelatedNodeView({ data }: NodeProps) {
 
 const nodeTypes = { focus: FocusNodeView, related: RelatedNodeView };
 
+// --- floating edges -------------------------------------------------------
+// Standard React Flow technique: instead of anchoring to a fixed handle, find
+// where the straight line between two node centers crosses the source node's
+// border. That makes each edge leave from whichever side faces its target.
+
+function nodeBorderPoint(node: InternalNode, other: InternalNode): { x: number; y: number } {
+  const w = (node.measured.width ?? 0) / 2;
+  const h = (node.measured.height ?? 0) / 2;
+  const cx = node.internals.positionAbsolute.x + w;
+  const cy = node.internals.positionAbsolute.y + h;
+  const ox = other.internals.positionAbsolute.x + (other.measured.width ?? 0) / 2;
+  const oy = other.internals.positionAbsolute.y + (other.measured.height ?? 0) / 2;
+
+  const xx = (ox - cx) / (2 * w || 1) - (oy - cy) / (2 * h || 1);
+  const yy = (ox - cx) / (2 * w || 1) + (oy - cy) / (2 * h || 1);
+  const a = 1 / (Math.abs(xx) + Math.abs(yy) || 1);
+  const xx3 = a * xx;
+  const yy3 = a * yy;
+  return { x: w * (xx3 + yy3) + cx, y: h * (-xx3 + yy3) + cy };
+}
+
+function FloatingEdge({ id, source, target, style, data }: EdgeProps) {
+  const sourceNode = useInternalNode(source);
+  const targetNode = useInternalNode(target);
+  if (!sourceNode || !targetNode) return null;
+  const s = nodeBorderPoint(sourceNode, targetNode);
+  const t = nodeBorderPoint(targetNode, sourceNode);
+  const [path, labelX, labelY] = getStraightPath({ sourceX: s.x, sourceY: s.y, targetX: t.x, targetY: t.y });
+  const label = (data as { label?: string } | undefined)?.label;
+  return (
+    <>
+      <BaseEdge id={id} path={path} style={style} />
+      {label ? (
+        <EdgeLabelRenderer>
+          <div
+            className="pointer-events-none absolute max-w-[170px] rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-center font-mono text-[10px] leading-[1.35] text-[var(--color-fg-dim)]"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
+  );
+}
+
+const edgeTypes = { floating: FloatingEdge };
+
 function buildGraph(derived: Derived): { nodes: Node[]; edges: Edge[] } {
   const n = derived.related.length;
   // Virtual radial canvas; React Flow's fitView scales it to the container.
@@ -176,12 +231,9 @@ function buildGraph(derived: Derived): { nodes: Node[]; edges: Edge[] } {
       id: `edge-${r.incidentId}`,
       source: "focus",
       target: r.incidentId,
-      label: r.shared.length > 0 ? describeShared(r.shared) : undefined,
+      type: "floating",
+      data: { label: r.shared.length > 0 ? describeShared(r.shared) : undefined },
       style: { stroke: "var(--color-border-strong)", strokeWidth: 1, strokeDasharray: "2 5" },
-      labelStyle: { fontFamily: "var(--font-mono)", fontSize: 10, fill: "var(--color-fg-dim)" },
-      labelBgStyle: { fill: "var(--color-bg)", fillOpacity: 0.95 },
-      labelBgPadding: [6, 3],
-      labelBgBorderRadius: 6,
     });
   });
   return { nodes, edges };
@@ -246,6 +298,8 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          connectionMode={ConnectionMode.Loose}
           fitView
           fitViewOptions={{ padding: 0.25 }}
           minZoom={0.3}
