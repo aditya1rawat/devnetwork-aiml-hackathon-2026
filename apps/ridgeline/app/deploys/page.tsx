@@ -52,18 +52,7 @@ export default function DeploysPage() {
     live.current = window.setTimeout(() => {
       setPhase("live-ok");
       climb.current = window.setInterval(() => {
-        setErrorRate((v) => {
-          const next = Math.min(44, v + 6);
-          if (next >= 44 && !raised.current) {
-            raised.current = true;
-            setPhase("errored");
-            if (climb.current) window.clearInterval(climb.current);
-            raise(DRIFT_FAULT);
-          } else if (next > 0) {
-            setPhase("errored");
-          }
-          return next;
-        });
+        setErrorRate((v) => Math.min(44, v + 6));
       }, 500);
     }, 1600);
     return () => {
@@ -71,6 +60,16 @@ export default function DeploysPage() {
       if (climb.current) window.clearInterval(climb.current);
     };
   }, [raise]);
+
+  // React to the climbing error rate outside the state updater.
+  useEffect(() => {
+    if (errorRate > 0) setPhase("errored");
+    if (errorRate >= 44 && !raised.current) {
+      raised.current = true;
+      if (climb.current) window.clearInterval(climb.current);
+      raise(DRIFT_FAULT);
+    }
+  }, [errorRate, raise]);
 
   const deploying = phase === "deploying";
   const errored = errorRate > 0;

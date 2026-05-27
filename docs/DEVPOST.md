@@ -26,7 +26,7 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 
 2. **Incident Knowledge Base.** Every resolved investigation is ingested into a bi-temporal knowledge graph (Neo4j + Graphiti). On the next incident, Argus retrieves past cases sharing services, symptoms, or root causes, then verifies them against live signals before trusting them. The graph compounds: resolve, ingest, retrieve, resolve smarter.
 
-3. **Ridgeline integration.** A standalone product simulation (Ridgeline, a fictional data-pipeline platform) where ordinary user actions trigger realistic faults. An embedded Argus launcher detects the fault, shows an AI-generated first-pass triage, and deep-links into the full investigation view. The operator never leaves their product context.
+3. **Ridgeline integration.** A standalone product simulation (Ridgeline, a fictional data-pipeline platform) where ordinary user actions trigger realistic faults. An embedded Argus launcher detects the fault and streams in a live first-pass triage (a Claude Haiku call through the gateway), then deep-links into the full investigation view. Every one of the six scenarios has its own Ridgeline surface, and faults across surfaces stack as independent alerts. The operator never leaves their product context.
 
 ### How we built it
 

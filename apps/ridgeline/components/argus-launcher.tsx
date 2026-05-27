@@ -1,26 +1,63 @@
 "use client";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { useFault } from "@/lib/fault-context";
+import { useFault, type Fault } from "@/lib/fault-context";
 import { triage, startScenario, argusIncidentUrl, type Triage } from "@/lib/api";
 
 type TriageState = { status: "loading" } | { status: "ready"; data: Triage } | { status: "error" };
 
 export function ArgusLauncher() {
-  const { fault } = useFault();
-  const [open, setOpen] = useState(false);
+  const { faults, dismiss } = useFault();
+  const [open, setOpen] = useState(true);
+  const hasFault = faults.length > 0;
+
+  // Re-open the stack whenever a new fault arrives.
+  useEffect(() => {
+    if (faults.length > 0) setOpen(true);
+  }, [faults.length]);
+
+  return (
+    <div className="argus-ext" data-fault={hasFault || undefined}>
+      <ExtStyles />
+      {hasFault && open ? (
+        <div className="argus-ext-stack">
+          {faults.map((f) => (
+            <ArgusToast key={f.scenario} fault={f} onClose={() => dismiss(f.scenario)} />
+          ))}
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        className="argus-ext-launcher"
+        aria-label={open ? "Argus" : "Open Argus alerts"}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="argus-ext-glyph" aria-hidden />
+        {faults.length > 1 ? <span className="argus-ext-count">{faults.length}</span> : null}
+      </button>
+    </div>
+  );
+}
+
+// One alert per active fault. Owns its own triage fetch, stream timing, and
+// handoff so multiple toasts run independently.
+function ArgusToast({ fault, onClose }: { fault: Fault; onClose: () => void }) {
   const [tri, setTri] = useState<TriageState>({ status: "loading" });
+  const [showStream, setShowStream] = useState(false);
   const [paging, startPaging] = useTransition();
   const [pageErr, setPageErr] = useState<string | null>(null);
-  const lastScenario = useRef<string | null>(null);
+
+  // Hold the "generating…" state for ~1s before the text streams in, even if
+  // the triage call returns sooner.
+  useEffect(() => {
+    const id = window.setTimeout(() => setShowStream(true), 1000);
+    return () => window.clearTimeout(id);
+  }, []);
 
   useEffect(() => {
-    if (!fault) return;
-    setOpen(true);
-    setPageErr(null);
-    if (lastScenario.current === fault.scenario) return;
-    lastScenario.current = fault.scenario;
-    setTri({ status: "loading" });
     let alive = true;
+    setTri({ status: "loading" });
     triage(fault.scenario).then(
       (data) => {
         if (alive) setTri({ status: "ready", data });
@@ -32,12 +69,10 @@ export function ArgusLauncher() {
     return () => {
       alive = false;
     };
-  }, [fault]);
-
-  const hasFault = !!fault;
+  }, [fault.scenario]);
 
   function handoff() {
-    if (!fault || paging) return;
+    if (paging) return;
     setPageErr(null);
     startPaging(async () => {
       try {
@@ -50,84 +85,112 @@ export function ArgusLauncher() {
   }
 
   return (
-    <div className="argus-ext" data-fault={hasFault || undefined}>
-      <ExtStyles />
-      {fault && open ? (
-        <section className="argus-ext-toast" role="alert" aria-live="polite">
-          <header className="argus-ext-head">
-            <span className="argus-ext-title">
-              <span className="argus-ext-mark" aria-hidden>
-                ◆
-              </span>
-              ARGUS
-              <span className="argus-ext-sub">· detected</span>
-            </span>
-            <button
-              type="button"
-              className="argus-ext-dismiss"
-              aria-label="Dismiss"
-              onClick={() => setOpen(false)}
-            >
-              ×
-            </button>
-          </header>
+    <section className="argus-ext-toast" role="alert" aria-live="polite">
+      <header className="argus-ext-head">
+        <span className="argus-ext-title">
+          <span className="argus-ext-mark" aria-hidden>
+            ◆
+          </span>
+          ARGUS
+          <span className="argus-ext-sub">· detected</span>
+        </span>
+        <button type="button" className="argus-ext-dismiss" aria-label="Dismiss" onClick={onClose}>
+          ×
+        </button>
+      </header>
 
-          <p className="argus-ext-service">
-            <span className="argus-ext-svc-name">{fault.service}</span>
-            <span className="argus-ext-svc-symptom">{fault.symptom}</span>
+      <p className="argus-ext-service">
+        <span className="argus-ext-svc-name">{fault.service}</span>
+        <span className="argus-ext-svc-symptom">{fault.symptom}</span>
+      </p>
+
+      <div className="argus-ext-triage">
+        {tri.status === "error" ? (
+          <p className="argus-ext-diagnosis">
+            First-pass triage unavailable. Page Argus to begin the full investigation.
           </p>
-
-          <div className="argus-ext-triage">
-            {tri.status === "loading" ? (
-              <div className="argus-ext-loading">
-                <span className="argus-ext-dots" aria-hidden>
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span className="argus-ext-loading-label">triaging…</span>
-                <span className="argus-ext-bar" aria-hidden>
-                  <i />
-                </span>
-              </div>
-            ) : tri.status === "error" ? (
-              <p className="argus-ext-diagnosis">
-                First-pass triage unavailable. Page Argus to begin the full investigation.
-              </p>
-            ) : (
-              <>
-                <p className="argus-ext-diagnosis">{tri.data.diagnosis}</p>
-                <p className="argus-ext-rootcause">
-                  <span className="argus-ext-rc-label">ROOT CAUSE</span>
-                  <span className="argus-ext-rc-value">{tri.data.suspectedRootCause}</span>
-                </p>
-              </>
-            )}
+        ) : tri.status === "ready" && showStream ? (
+          <StreamedTriage data={tri.data} />
+        ) : (
+          <div className="argus-ext-loading">
+            <span className="argus-ext-dots" aria-hidden>
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="argus-ext-loading-label">generating…</span>
+            <span className="argus-ext-bar" aria-hidden>
+              <i />
+            </span>
           </div>
-
-          <button
-            type="button"
-            className="argus-ext-cta"
-            onClick={handoff}
-            disabled={paging}
-            aria-busy={paging || undefined}
-          >
-            {paging ? "PAGING…" : "Open investigation →"}
-          </button>
-          {pageErr ? <p className="argus-ext-err">{pageErr}</p> : null}
-        </section>
-      ) : null}
+        )}
+      </div>
 
       <button
         type="button"
-        className="argus-ext-launcher"
-        aria-label={open ? "Argus" : "Open Argus alert"}
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        className="argus-ext-cta"
+        onClick={handoff}
+        disabled={paging}
+        aria-busy={paging || undefined}
       >
-        <span className="argus-ext-glyph" aria-hidden />
+        {paging ? "PAGING…" : "Open investigation →"}
       </button>
-    </div>
+      {pageErr ? <p className="argus-ext-err">{pageErr}</p> : null}
+    </section>
+  );
+}
+
+// Reveals `full` over roughly `durationMs`, like a streaming chat response.
+function StreamedText({ full, durationMs = 700, onDone }: { full: string; durationMs?: number; onDone?: () => void }) {
+  const [n, setN] = useState(0);
+  const doneCb = useRef(onDone);
+  doneCb.current = onDone;
+
+  useEffect(() => {
+    setN(0);
+    if (!full) {
+      doneCb.current?.();
+      return;
+    }
+    const step = Math.max(8, Math.floor(durationMs / full.length));
+    let i = 0;
+    const id = window.setInterval(() => {
+      i += 1;
+      setN(i);
+      if (i >= full.length) {
+        window.clearInterval(id);
+        doneCb.current?.();
+      }
+    }, step);
+    return () => window.clearInterval(id);
+  }, [full, durationMs]);
+
+  const done = n >= full.length;
+  return (
+    <>
+      {full.slice(0, n)}
+      {done ? null : <span className="argus-ext-caret" aria-hidden />}
+    </>
+  );
+}
+
+// Types out the diagnosis, then the root cause, in sequence (~1s total).
+function StreamedTriage({ data }: { data: Triage }) {
+  const [phase, setPhase] = useState<"diag" | "root">("diag");
+  return (
+    <>
+      <p className="argus-ext-diagnosis">
+        <StreamedText full={data.diagnosis} durationMs={900} onDone={() => setPhase("root")} />
+      </p>
+      {phase === "root" ? (
+        <p className="argus-ext-rootcause">
+          <span className="argus-ext-rc-label">ROOT CAUSE</span>
+          <span className="argus-ext-rc-value">
+            <StreamedText full={data.suspectedRootCause} durationMs={400} />
+          </span>
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -148,7 +211,20 @@ const EXT_CSS = `
   font-family: var(--font-mono);
 }
 
+.argus-ext-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  width: 100%;
+  max-height: 78vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px;
+}
+
 .argus-ext-launcher {
+  position: relative;
   width: 44px;
   height: 44px;
   flex-shrink: 0;
@@ -161,6 +237,24 @@ const EXT_CSS = `
   cursor: default;
   padding: 0;
   transition: background 140ms cubic-bezier(0.22, 1, 0.36, 1), border-color 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.argus-ext-count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-danger);
+  color: var(--color-bg);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 9px;
 }
 .argus-ext-launcher:focus-visible {
   outline: 1px solid var(--color-fg-dim);
@@ -300,6 +394,20 @@ const EXT_CSS = `
   letter-spacing: 0.04em;
 }
 
+.argus-ext-caret {
+  display: inline-block;
+  width: 6px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--color-fg-muted);
+  animation: argus-caret 0.9s steps(1) infinite;
+}
+@keyframes argus-caret {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
 .argus-ext-loading {
   display: flex;
   align-items: center;
@@ -368,6 +476,6 @@ const EXT_CSS = `
 
 @media (prefers-reduced-motion: reduce) {
   .argus-ext-launcher, .argus-ext-toast,
-  .argus-ext-dots i, .argus-ext-bar i { animation: none; }
+  .argus-ext-dots i, .argus-ext-bar i, .argus-ext-caret { animation: none; }
 }
 `;

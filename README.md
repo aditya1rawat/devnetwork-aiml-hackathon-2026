@@ -12,7 +12,7 @@ Built for the DevNetwork AI+ML Hackathon 2026.
 
 - **Dual-cognition resilience.** Two models (Claude as primary, Nemotron as shadow) execute the investigation in lockstep through TrueFoundry's AI Gateway. When the primary degrades, the shadow takes over with no context loss. When they disagree, that divergence is itself a hallucination signal.
 - **Incident Knowledge Base.** Every resolved investigation is ingested into a bi-temporal knowledge graph (Neo4j + Graphiti). On the next incident, Argus retrieves past cases sharing services, symptoms, or root causes, then verifies them against live signals before trusting them.
-- **Product-embedded triggers.** Ridgeline, a fictional data-pipeline platform, simulates real product surfaces that go into distress. An embedded Argus launcher detects the fault, shows an AI-generated first-pass triage, and deep-links into the full investigation. The operator never leaves their product context.
+- **Product-embedded triggers.** Ridgeline, a fictional data-pipeline platform, simulates real product surfaces that go into distress. An embedded Argus launcher detects the fault and streams in a live first-pass triage (a Claude Haiku call through the gateway) before deep-linking into the full investigation. Faults across surfaces stack as separate alerts, and the operator never leaves their product context.
 
 ## Architecture
 
