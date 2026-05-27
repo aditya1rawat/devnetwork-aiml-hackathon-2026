@@ -1,12 +1,27 @@
-# Argus — Devpost submission
+# Argus — Devpost Submission
 
-## Elevator pitch
-Highly-available web servers run on N machines. Why don't agents?
+---
 
-## Inspiration
+## a. Project Name
+
+**Argus**
+
+## b. Elevator Pitch
+
+Highly-available web servers run on N machines. Why don't agents? Argus is a dual-cognition SRE agent that investigates production incidents autonomously — and survives the infrastructure chaos it's responding to.
+
+## c. Created By
+
+Aditya Rawat
+
+## d. Here's the Whole Story
+
+### Inspiration
+
 Every team building agents hits this pain the moment they go to production: the LLM blinks, the agent dies. Existing answers are retry loops — fundamentally single-cognition, fundamentally exposed. And when the incident is over, the knowledge dies with the chat log. No one learns.
 
-## What it does
+### What it does
+
 Argus is an autonomous on-call SRE agent that investigates live incidents while surviving the infrastructure chaos it is responding to.
 
 **Three core capabilities:**
@@ -17,7 +32,8 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 
 3. **Ridgeline integration.** A standalone product simulation (Ridgeline — a fictional data-pipeline platform) where ordinary user actions trigger realistic faults. An embedded Argus launcher detects the fault, shows an AI-generated first-pass triage, and deep-links into the full investigation view. The operator never leaves their product context.
 
-## How we built it
+### How we built it
+
 - **Next.js 16** App Router: Argus investigation view (:3000) + Ridgeline product simulation (:3001), visually and brand-distinct.
 - **Node.js orchestrator** (Hono) managing dual-cognition conductor, incident lifecycle, chaos injection, KB ingest, and triage endpoints.
 - **TrueFoundry AI Gateway** for provider routing + automatic direct-mode fallback when the Gateway itself fails.
@@ -27,14 +43,16 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 - **Python FastAPI** mock service cluster (api / worker / db_proxy / auth) with chaos injection endpoints.
 - **Ridgeline app** — 4 surfaces (Overview dashboard, Sign In, Query Studio, Batch Jobs), each with an embedded fault trigger and Argus launcher overlay.
 
-## Challenges we ran into
+### Challenges we ran into
+
 - Shadow execution at scale: keeping two LLM streams synchronized while only executing one set of tool calls.
 - Detecting "brownout" (slow but not failed) without an embedding model: ended up using token-set similarity as a pragmatic surrogate.
 - Failover across mid-flight tool calls — punted; failover happens between steps in MVP.
 - Knowledge graph seeding: Graphiti's entity extraction uses Gemini, which has aggressive rate limits. Built a token-bucket limiter with exponential backoff to seed 12 historical incidents without hitting quota walls.
 - Two-brand visual design: Argus (cool violet, serif italic) and Ridgeline (warm green, monospace) needed to be instantly distinguishable side-by-side while both looking like real products.
 
-## Accomplishments we're proud of
+### Accomplishments we're proud of
+
 - Live demo: kill Claude mid-investigation. Nemotron carries the reasoning. Zero rebuild.
 - Live demo: sever TrueFoundry Gateway. Direct-mode kicks in. Investigation completes.
 - Dual cognition is a feature, not just a fallback — it's a built-in hallucination detector.
@@ -42,22 +60,39 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 - The knowledge graph compounds: each resolved incident makes the next investigation smarter. No human curation required.
 - Six distinct incident scenarios across four services, each with a branded product surface.
 
-## What we learned
+### What we learned
+
 - Active-active is the right pattern for agents under production conditions.
 - The Gateway abstraction earns its complexity the moment chaos hits.
 - A knowledge base that ingests its own outputs creates a genuine learning loop — the agent's historical memory is its strongest reasoning aid.
 - Product-embedded AI triggers (not dashboards, not chatbots) are the right UX for on-call operators. They're already staring at the broken thing.
 
-## What's next
+### What's next
+
 - Real observability plug (Sentry/Datadog MCP) — chaos hooks become unnecessary.
 - Approval-gated remediation mode → autonomous remediation.
 - Predictive brownout detection from latency telemetry.
 - Graph-powered anomaly correlation: when a new incident shares a service node with 3+ past incidents, surface the pattern proactively.
 
-## Built with
+## e. Built With
+
 Next.js 16, React 19, Hono, TrueFoundry AI Gateway, Crusoe Cloud Managed Inference, Nemotron, Claude, Model Context Protocol, Neo4j, Graphiti, FastAPI, TypeScript, Tailwind CSS, Python.
 
-## Try it
+## f. Image Gallery
+
+<!-- Add screenshots before submission:
+- Ridgeline Overview dashboard (healthy state)
+- Ridgeline /jobs with worker-3 OOM + Argus launcher flare
+- Argus toast with AI triage diagnosis
+- Argus investigation view (dual-cognition reasoning panes)
+- Final report with knowledge graph neighborhood
+- Ops status board (6 scenarios)
+-->
+
+## g. Try It Out
+
 - GitHub: [link]
-- Live: [vercel-url]
-- Video demo: [link]
+
+## h. Video Demo
+
+<!-- Link to demo video (1-3 min) -->
