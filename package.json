@@ -4,6 +4,7 @@
   "packageManager": "pnpm@9.0.0",
   "scripts": {
     "dev:web": "pnpm --filter @argus/web dev",
+    "dev:ridgeline": "pnpm --filter @argus/ridgeline dev",
     "dev:orch": "pnpm --filter @argus/orchestrator dev",
     "dev:mcp": "pnpm --filter @argus/mcp dev",
     "dev:cluster": "uv --directory services/mock-cluster run cluster",
