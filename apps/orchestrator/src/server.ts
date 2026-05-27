@@ -376,6 +376,48 @@ export function buildApp(deps: AppDeps) {
     return c.json({ ok: true, id });
   });
 
+  const TRIAGE_MODEL = process.env.TRIAGE_MODEL ?? "claude-haiku-4-5-20251001";
+
+  function fallbackTriage(cfg: DemoScenario): { diagnosis: string; suspectedRootCause: string } {
+    return {
+      diagnosis: `${cfg.symptom}. Observed: ${cfg.sampleLog}`,
+      suspectedRootCause: cfg.rootCause,
+    };
+  }
+
+  app.post("/triage", async (c) => {
+    const body = await c.req.json<{ scenario?: string }>().catch(() => ({}) as { scenario?: string });
+    const scenario = body.scenario ?? "";
+    const cfg = DEMO_SCENARIOS[scenario];
+    if (!cfg) return c.json({ error: "unknown scenario" }, 404);
+
+    const prompt = [
+      "You are Argus, an autonomous SRE triage agent. A production incident just fired.",
+      `Service: ${cfg.service}`,
+      `Symptom: ${cfg.symptom}`,
+      `Key metric: ${cfg.metric.label}=${cfg.metric.value} (trend ${cfg.metric.trend})`,
+      `Sample log: ${cfg.sampleLog}`,
+      "",
+      'Give a first-pass triage. Respond ONLY with JSON of the form {"diagnosis": "<1-2 sentences, observational and precise>", "suspectedRootCause": "<short phrase>"}.',
+    ].join("\n");
+
+    try {
+      const res = await deps.gateway.chat({
+        provider: "claude",
+        model: TRIAGE_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        maxTokens: 300,
+        responseFormat: "json_object",
+      });
+      const parsed = JSON.parse(res.text) as { diagnosis?: string; suspectedRootCause?: string };
+      if (!parsed.diagnosis || !parsed.suspectedRootCause) throw new Error("incomplete triage");
+      return c.json({ diagnosis: parsed.diagnosis, suspectedRootCause: parsed.suspectedRootCause });
+    } catch {
+      return c.json(fallbackTriage(cfg));
+    }
+  });
+
   app.get("/incidents", (c) => {
     const list = Array.from(incidents.entries()).map(([id, entry]) => {
       const failoverEvt = entry.events.find((e) => e.type === "failover");
