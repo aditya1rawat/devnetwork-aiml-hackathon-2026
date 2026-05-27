@@ -1,20 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { listScenarios, listIncidents, listHistoricalIncidents, startScenario, type DemoScenario, type HistoricalIncident, type IncidentSummary } from "@/lib/api";
+import { listIncidents, listHistoricalIncidents, type HistoricalIncident, type IncidentSummary } from "@/lib/api";
 
 export function IncidentsClient() {
-  const router = useRouter();
-  const [scenarios, setScenarios] = useState<DemoScenario[] | null>(null);
   const [incidents, setIncidents] = useState<IncidentSummary[] | null>(null);
   const [historical, setHistorical] = useState<HistoricalIncident[] | null>(null);
-  const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    listScenarios().then(setScenarios).catch((e) => setErr(String(e)));
-  }, []);
 
   useEffect(() => {
     let stop = false;
@@ -44,46 +36,25 @@ export function IncidentsClient() {
     };
   }, []);
 
-  async function launch(scenario: string) {
-    setPending(scenario);
-    setErr(null);
-    try {
-      const { id } = await startScenario(scenario);
-      router.push(`/incident/${id}`);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-      setPending(null);
-    }
-  }
-
   return (
     <main className="min-h-screen bg-[var(--color-bg)] text-[var(--color-fg)]">
       <Topbar />
 
       <div className="mx-auto w-full max-w-[1100px] px-6 py-10 space-y-12">
         <header className="space-y-3">
-          <p className="font-mono-label text-[var(--color-fg-dim)]">incidents</p>
+          <p className="font-mono-label text-[var(--color-fg-dim)]">argus / incidents</p>
           <h1 className="font-display text-[44px] font-extralight tracking-tight leading-[1.05]">
             Browse <span className="font-serif-display italic text-[var(--color-fg-muted)]">runs</span>.
           </h1>
           <p className="max-w-[52ch] text-[15.5px] font-light leading-[1.55] text-[var(--color-fg-muted)]">
-            Pick a chaos scenario to launch a fresh investigation, or jump back into a past run.
+            Past investigations and the historical case base. Page a fresh scenario from the{" "}
+            <Link href="/status" className="text-[var(--color-fg)] underline decoration-[var(--color-border-strong)] underline-offset-4 transition-colors hover:text-[var(--color-primary)]">
+              status board
+            </Link>
+            .
           </p>
-        </header>
-
-        <section className="space-y-4">
-          <SectionLabel label="demoable scenarios" />
-          {scenarios === null ? (
-            <p className="font-mono-meta text-[var(--color-fg-dim)]">loading…</p>
-          ) : (
-            <ul className="grid gap-4 md:grid-cols-2">
-              {scenarios.map((s) => (
-                <ScenarioCard key={s.id} scenario={s} pending={pending === s.id} disabled={pending !== null} onLaunch={() => launch(s.id)} />
-              ))}
-            </ul>
-          )}
           {err ? <p className="font-mono-meta text-[var(--color-danger)]">{err}</p> : null}
-        </section>
+        </header>
 
         <section className="space-y-4">
           <div className="flex items-baseline justify-between">
@@ -137,7 +108,10 @@ function Topbar() {
           argus
         </Link>
         <nav className="flex items-center gap-5">
-          <Link href="/incidents" className="font-mono-meta text-[var(--color-fg)]">
+          <Link href="/status" className="font-mono-label text-[var(--color-fg-dim)] transition-colors hover:text-[var(--color-fg)]">
+            status
+          </Link>
+          <Link href="/incidents" className="font-mono-label text-[var(--color-fg)]">
             incidents
           </Link>
         </nav>
@@ -148,55 +122,6 @@ function Topbar() {
 
 function SectionLabel({ label }: { label: string }) {
   return <h2 className="font-mono-label text-[var(--color-fg-dim)]">{label}</h2>;
-}
-
-function ScenarioCard({
-  scenario,
-  pending,
-  disabled,
-  onLaunch,
-}: {
-  scenario: DemoScenario;
-  pending: boolean;
-  disabled: boolean;
-  onLaunch: () => void;
-}) {
-  return (
-    <li className="flex flex-col gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-5">
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-[18px] font-light tracking-tight text-[var(--color-fg)]">{scenario.title}</h3>
-        <span className="rounded-md border border-[var(--color-border)] px-2 py-0.5 font-mono text-[10.5px] tracking-[0.18em] uppercase text-[var(--color-fg-dim)]">
-          {scenario.chaosType}
-        </span>
-      </div>
-      <p className="text-[14.5px] font-light leading-[1.55] text-[var(--color-fg-muted)]">{scenario.blurb}</p>
-      <dl className="grid grid-cols-3 gap-3 border-t border-[var(--color-border)] pt-3 font-mono text-[11.5px] tnum">
-        <Meta label="target" value={scenario.target} />
-        <Meta label="warmup" value={`${scenario.warmupS}s`} />
-        <Meta label="duration" value={`${scenario.durationS}s`} />
-      </dl>
-      <button
-        type="button"
-        onClick={onLaunch}
-        disabled={disabled}
-        className="mt-1 flex items-center justify-between gap-3 rounded-md border border-[var(--color-primary)]/45 bg-[var(--color-primary-soft)]/20 px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-primary-soft)]/35 disabled:cursor-not-allowed disabled:opacity-55"
-      >
-        <span className="font-mono text-[12px] tracking-[0.05em] text-[var(--color-primary)]">
-          {pending ? "starting…" : "launch investigation"}
-        </span>
-        <span className="font-mono text-[12px] text-[var(--color-fg-dim)]">↗</span>
-      </button>
-    </li>
-  );
-}
-
-function Meta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="font-mono-label text-[var(--color-fg-dim)]">{label}</dt>
-      <dd className="text-[var(--color-fg)]">{value}</dd>
-    </div>
-  );
 }
 
 function IncidentRow({ incident }: { incident: IncidentSummary }) {
@@ -282,7 +207,7 @@ function EmptyRuns() {
     <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]/30 px-6 py-12 text-center">
       <p className="font-mono-label text-[var(--color-fg-dim)]">no runs yet</p>
       <p className="max-w-[36ch] font-light text-[14.5px] text-[var(--color-fg-muted)]">
-        Launch a scenario above to spin up the first investigation. Past runs accumulate here.
+        Page Argus from the status board to launch an investigation. Past runs accumulate here.
       </p>
     </div>
   );

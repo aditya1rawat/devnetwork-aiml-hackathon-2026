@@ -8,6 +8,9 @@ export default function HomePage() {
           argus
         </Link>
         <nav className="flex items-center gap-6">
+          <Link href="/status" className="font-mono-meta text-[var(--color-fg-dim)] transition-colors hover:text-[var(--color-fg)]">
+            status
+          </Link>
           <Link href="/incidents" className="font-mono-meta text-[var(--color-fg-dim)] transition-colors hover:text-[var(--color-fg)]">
             incidents
           </Link>
@@ -34,11 +37,18 @@ export default function HomePage() {
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
               <Link
-                href="/incidents"
+                href="/status"
                 className="group inline-flex items-center gap-2.5 rounded-lg bg-[var(--color-primary)] px-5 py-3 text-[14px] font-medium text-[var(--color-bg)] transition-opacity hover:opacity-90"
               >
+                Open status board
+                <span className="font-mono-meta text-[var(--color-bg)]/70">page argus</span>
+                <span className="transition-transform group-hover:translate-x-0.5" aria-hidden>→</span>
+              </Link>
+              <Link
+                href="/incidents"
+                className="group inline-flex items-center gap-2.5 rounded-lg border border-[var(--color-border-strong)] px-5 py-3 text-[14px] font-light text-[var(--color-fg)] transition-colors hover:border-[var(--color-fg-muted)]"
+              >
                 Browse incidents
-                <span className="font-mono-meta text-[var(--color-bg)]/70">launch a scenario</span>
                 <span className="transition-transform group-hover:translate-x-0.5" aria-hidden>→</span>
               </Link>
             </div>
