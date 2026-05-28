@@ -1,0 +1,16 @@
+### Argus orchestrator persisted-run prune — run on Droplet
+###
+### Nukes ALL worker-oom persisted runs. Keeps non-worker-oom (db-saturation, etc).
+### KB still has 2 worker-oom argus runs visible under /incidents/historical for case-graph retrieval.
+### Restart re-hydrates orch's in-memory Map from disk.
+
+ORCH=$(docker ps -qf name=orch)
+
+docker exec -i "$ORCH" sh -c '
+cd /app/apps/orchestrator/data/incidents &&
+rm -fv worker-oom-*.json &&
+echo --- remaining: &&
+ls -1'
+
+docker restart "$ORCH"
+echo "orch restarted — refresh /incidents in the browser"

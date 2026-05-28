@@ -1,0 +1,32 @@
+### Argus KB prune — run on Droplet (ssh root@64.23.239.2)
+###
+### Step 1: DRY-RUN (APPLY=False). Lists what would be deleted.
+### Step 2: flip APPLY=False -> APPLY=True, paste again to delete.
+### KEEP = how many newest argus runs to keep per scenario. historical-provenance rows untouched.
+
+docker exec -i $(docker ps -qf name=kb) python - <<'PY'
+import json, urllib.request as R
+BASE = "http://localhost:7301"
+KEEP = 2
+APPLY = False
+
+inc = json.loads(R.urlopen(f"{BASE}/incidents?provenance=argus").read())["incidents"]
+by = {}
+for i in inc:
+    by.setdefault(i.get("scenario") or "unknown", []).append(i)
+
+to_del = []
+for s, rows in by.items():
+    rows.sort(key=lambda r: r.get("resolved_at") or "", reverse=True)
+    to_del += rows[KEEP:]
+
+print(f"argus total={len(inc)} candidates={len(to_del)} keep={KEEP}/scenario apply={APPLY}")
+for r in to_del:
+    print(f"  {(r.get('scenario') or 'unknown'):22} {r['incident_id']:40} {r.get('resolved_at')}")
+
+if APPLY:
+    for r in to_del:
+        req = R.Request(f"{BASE}/admin/incident/{r['incident_id']}", method="DELETE")
+        resp = json.loads(R.urlopen(req).read())
+        print(f"  deleted={resp.get('deleted')} {r['incident_id']}")
+PY
