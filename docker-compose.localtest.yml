@@ -1,0 +1,37 @@
+# Local pre-DO smoke override. Used together with docker-compose.prod.yml:
+#
+#   docker compose --env-file .env.prod \
+#     -f docker-compose.prod.yml -f docker-compose.localtest.yml \
+#     up -d --build
+#
+# Just adds host port mappings so the host-side web/ridgeline (still running
+# on :3000 / :3001) can reach the containerized backend. Skips Caddy (no
+# domain locally). Neo4j is compose-owned; reseed with `pnpm seed-kb` after
+# bring-up.
+
+services:
+  cluster:
+    ports:
+      - "7100:7100"
+      - "7101:7101"
+      - "7102:7102"
+      - "7103:7103"
+      - "7104:7104"
+
+  kb:
+    ports:
+      - "7300:7300"
+      - "7301:7301"
+
+  orch:
+    ports:
+      - "7200:7200"
+
+  neo4j:
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+
+  # Caddy needs a real domain to provision TLS — skip locally.
+  caddy:
+    profiles: ["edge"]

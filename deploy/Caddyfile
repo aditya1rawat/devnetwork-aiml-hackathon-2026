@@ -1,0 +1,28 @@
+# Caddy reverse proxy with automatic Let's Encrypt TLS.
+#
+# Replace `orch.example.com` with the real subdomain you point at the
+# Droplet's floating IP before bringing the stack up. Caddy will request
+# and auto-renew the cert as long as the DNS A record resolves correctly.
+#
+# The Vercel-hosted frontends (web + ridgeline) hit this host over HTTPS;
+# CORS is enforced inside the orchestrator via the CORS_ORIGINS env var.
+
+orch.example.com {
+    encode zstd gzip
+
+    # SSE needs unbuffered streaming for /incident/:id/stream to feel live.
+    reverse_proxy orch:7200 {
+        flush_interval -1
+    }
+
+    # Long-running EventSource connections — keep them open.
+    @sse path /incident/*/stream
+    handle @sse {
+        reverse_proxy orch:7200 {
+            flush_interval -1
+            transport http {
+                read_timeout 0
+            }
+        }
+    }
+}

@@ -1,0 +1,124 @@
+# Production stack for the DigitalOcean Droplet. All five services share a
+# private docker network; only Caddy is exposed to the public internet (80/443).
+# Caddy auto-provisions Let's Encrypt certs and reverse-proxies to the
+# orchestrator. Build from the repo root:
+#
+#   docker compose --env-file .env.prod up -d --build
+#
+# Override the published domain by editing deploy/Caddyfile before bringing
+# the stack up — Caddy needs the real hostname to request the cert.
+
+services:
+  # ---------------------------------------------------------------------- Neo4j
+  neo4j:
+    image: neo4j:5
+    container_name: argus-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+      # Tuning for a 2 GB Droplet — keep page cache modest so KB has room.
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # --------------------------------------------------------------- Mock cluster
+  cluster:
+    build:
+      context: ./services/mock-cluster
+    image: argus-cluster
+    container_name: argus-cluster
+    restart: unless-stopped
+    expose:
+      - "7100"  # only the gateway is hit externally; 7101-7104 stay internal
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:7100/health', timeout=2)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # ------------------------------------------------------------------------- KB
+  kb:
+    build:
+      context: ./services/incident-kb
+    image: argus-kb
+    container_name: argus-kb
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      # Override the .env.prod neo4j URI so the container talks to the
+      # compose service, not host.docker.internal.
+      NEO4J_URI: bolt://neo4j:7687
+    expose:
+      - "7300"  # MCP
+      - "7301"  # admin REST
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:7301/health', timeout=2)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # --------------------------------------------------------------- Orchestrator
+  orch:
+    build:
+      context: .
+      dockerfile: apps/orchestrator/Dockerfile
+    image: argus-orch
+    container_name: argus-orch
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      MOCK_CLUSTER_URL: http://cluster:7100
+      INCIDENT_KB_MCP_URL: http://kb:7300/mcp
+      INCIDENT_KB_ADMIN_URL: http://kb:7301
+    expose:
+      - "7200"
+    volumes:
+      # Persistent incident-store survives rebuilds; otherwise rehydration
+      # loses every resolved case the moment the container restarts.
+      - orch-data:/app/apps/orchestrator/data
+    depends_on:
+      cluster:
+        condition: service_healthy
+      kb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7200/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # ---------------------------------------------------------- Edge (Caddy + TLS)
+  caddy:
+    image: caddy:2
+    container_name: argus-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      orch:
+        condition: service_healthy
+
+volumes:
+  neo4j-data: {}
+  neo4j-logs: {}
+  orch-data: {}
+  caddy-data: {}
+  caddy-config: {}
