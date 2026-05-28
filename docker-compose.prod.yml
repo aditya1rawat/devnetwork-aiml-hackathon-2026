@@ -95,7 +95,10 @@ services:
       kb:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:7200/health >/dev/null || exit 1"]
+      # node:22-slim has no wget/curl; use node's global fetch.
+      test:
+        - "CMD-SHELL"
+        - "node -e \"fetch('http://localhost:7200/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""
       interval: 10s
       timeout: 5s
       retries: 12
