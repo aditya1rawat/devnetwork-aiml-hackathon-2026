@@ -27,6 +27,58 @@ Built for the DevNetwork AI+ML Hackathon 2026.
 
 The orchestrator drives a dual-cognition conductor over the TrueFoundry AI Gateway (with automatic direct-mode fallback), manages incident lifecycle and chaos injection, and exposes triage + KB endpoints. MCP servers wrap the mock observability stack (logs / metrics / traces / runbook / incident-kb), each with retry, circuit breaker, and synthetic-response fallback.
 
+```mermaid
+flowchart LR
+    Operator((Operator))
+
+    subgraph Apps["User-facing apps"]
+      direction TB
+      Ridge["Ridgeline :3001<br/>product simulation"]
+      Web["Argus web :3000<br/>investigation view"]
+    end
+
+    Orch["Orchestrator :7200<br/>Hono · conductor · chaos · SSE"]
+
+    subgraph Tools["Tool plane"]
+      direction TB
+      MCP["MCP servers<br/>logs · metrics · traces · runbook"]
+      Cluster["Mock cluster :7100-7104<br/>api · worker · db_proxy · auth"]
+    end
+
+    subgraph Inference["Inference"]
+      direction TB
+      TFY["TrueFoundry AI Gateway"]
+      Claude["Claude Sonnet · Haiku"]
+      Crusoe["Crusoe Managed Inference"]
+      Nem["Nemotron Nano"]
+      Anth["Anthropic API<br/>direct fallback"]
+    end
+
+    subgraph KBox["Knowledge base"]
+      direction TB
+      KB["Incident KB<br/>:7300 MCP · :7301 admin"]
+      Graphiti["Graphiti"]
+      Neo4j[("Neo4j<br/>bi-temporal graph")]
+    end
+
+    Operator --> Ridge
+    Operator --> Web
+    Ridge -- "triage · start" --> Orch
+    Web -- "SSE stream" --> Orch
+    Orch -- "chaos inject" --> Cluster
+    Orch -- "tool calls" --> MCP
+    MCP --> Cluster
+    Orch -- "primary" --> TFY
+    TFY --> Claude
+    Orch -- "shadow" --> Crusoe
+    Crusoe --> Nem
+    Orch -. "TFY failure" .-> Anth
+    Orch <-- "ingest · read_incident_kb" --> KB
+    KB --> Graphiti
+    Graphiti -- "entity extract" --> Crusoe
+    KB --> Neo4j
+```
+
 ```
 apps/
   orchestrator/   Hono server: conductor, incident lifecycle, chaos, triage, KB ingest
