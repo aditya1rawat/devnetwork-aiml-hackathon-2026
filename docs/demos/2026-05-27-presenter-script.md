@@ -56,9 +56,9 @@ A spoken-word runbook for the live demo. `[DO]` = what you click. `[SAY]` = what
 
 `[SAY]` "Watch what happens when I kill the primary mid-thought."
 
-`[DO]` Failover banner appears within the current step — no extra "one more primary step" before it kicks in. Investigation continues without restarting.
+`[DO]` Failover banner appears; investigation continues without restarting.
 
-`[SAY]` "No retry loop. No cold start. The shadow was already mid-investigation, so it just takes over — zero context lost. And the kill cancels Claude's in-flight call mid-flight, not after it finishes. That's active-active for agents."
+`[SAY]` "No retry loop. No cold start. The shadow was already mid-investigation, so it just takes over — zero context lost. That's active-active for agents."
 
 `[DO]` (Optional) **Sever the TrueFoundry Gateway.** Direct-mode banner kicks in.
 
