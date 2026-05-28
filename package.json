@@ -1,7 +1,7 @@
 {
   "name": "argus",
   "private": true,
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@9.15.4",
   "scripts": {
     "dev:web": "pnpm --filter @argus/web dev",
     "dev:ridgeline": "pnpm --filter @argus/ridgeline dev",
