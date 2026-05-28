@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { GatewayClient } from "./gateway.js";
 import { McpPool } from "./mcp-pool.js";
@@ -165,6 +166,30 @@ type IncidentEntry = {
 export function buildApp(deps: AppDeps) {
   const app = new Hono();
   const incidents = new Map<string, IncidentEntry>();
+
+  // CORS. Browsers block cross-origin requests from the Vercel-hosted
+  // frontends (web :3000, ridgeline :3001 in dev; *.vercel.app in prod)
+  // without these headers. Origin list is env-driven so prod can lock down
+  // to specific Vercel URLs while local dev stays open.
+  // `*` is fine for the demo footprint — no auth, all endpoints are read or
+  // demo-write only — but CORS_ORIGINS lets you tighten it in prod.
+  const corsOriginsRaw = process.env.CORS_ORIGINS ?? "*";
+  const corsOrigins =
+    corsOriginsRaw === "*"
+      ? "*"
+      : corsOriginsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  app.use(
+    "*",
+    cors({
+      origin: corsOrigins,
+      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowHeaders: ["content-type", "authorization"],
+      // SSE clients (EventSource) don't send credentials by default — leaving
+      // this off avoids the credentials/wildcard conflict that browsers reject.
+      credentials: false,
+      maxAge: 86400,
+    }),
+  );
 
   // Rehydrate any previously-persisted runs so a restart doesn't drop the
   // live view for incidents the user investigated earlier. New SSE connections
