@@ -26,7 +26,7 @@ A spoken-word runbook for the live demo. `[DO]` = what you click. `[SAY]` = what
 
 `[DO]` Beat (~1.2s) where the surface is red but the Argus launcher hasn't fired yet. Then bottom-right launcher flares red. Click it.
 
-`[SAY]` "Argus detected the fault from inside the product. Notice the brief beat where you see the failure before the AI reacts — that's intentional, the operator gets to register the problem first."
+`[SAY]` "Argus detected the fault from inside the product. No dashboard to go hunt, no alert to triage — it's right here."
 
 `[DO]` Toast holds on "generating…" for ~1s, then streams in the diagnosis + suspected root cause.
 
