@@ -209,7 +209,7 @@ function statusVisual(status: IncidentSummary["status"]): { color: string; soft:
     case "failed_over":
       return { color: "var(--color-warn)", soft: "var(--color-warn-soft)", label: "failed over" };
     case "halted":
-      return { color: "var(--color-danger)", soft: "var(--color-danger-soft)", label: "halted" };
+      return { color: "var(--color-danger)", soft: "var(--color-danger-soft)", label: "failed" };
     case "resolved":
       return { color: "var(--color-success)", soft: "var(--color-success-soft)", label: "resolved" };
   }

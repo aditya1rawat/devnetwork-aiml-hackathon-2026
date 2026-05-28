@@ -74,7 +74,16 @@ class RateLimitedGenericClient(OpenAIGenericClient):
 
     async def _generate_response(self, *args, **kwargs):
         await _RATE_BUCKET.acquire()
-        return await super()._generate_response(*args, **kwargs)
+        result = await super()._generate_response(*args, **kwargs)
+        # Bump live counter for the active ingest job (no-op if call is not
+        # inside an ingest, e.g. search-time extraction). Imported lazily to
+        # avoid a circular import (ingest imports get_graphiti).
+        try:
+            from argus_kb.ingest import record_extraction_call
+            record_extraction_call()
+        except Exception:
+            pass
+        return result
 
 
 class RateLimitedReranker(OpenAIRerankerClient):

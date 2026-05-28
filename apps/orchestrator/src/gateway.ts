@@ -38,6 +38,11 @@ export class GatewayClient {
   private fetch: typeof fetch;
   private blockedProviders = new Set<ProviderName>();
   private gatewayFailures = 0;
+  // In-flight chat requests per provider. Tracked so that when chaos kills a
+  // provider, we abort any current call immediately instead of letting the
+  // step finish — otherwise the demo "kill claude" shows one extra primary
+  // step before failover kicks in.
+  private inflight = new Map<ProviderName, Set<AbortController>>();
 
   constructor(private opts: GatewayClientOpts) {
     this.fetch = opts.fetch ?? globalThis.fetch;
@@ -52,8 +57,13 @@ export class GatewayClient {
   }
 
   setProviderBlocked(provider: ProviderName, blocked: boolean): void {
-    if (blocked) this.blockedProviders.add(provider);
-    else this.blockedProviders.delete(provider);
+    if (blocked) {
+      this.blockedProviders.add(provider);
+      const set = this.inflight.get(provider);
+      if (set) for (const ctrl of set) ctrl.abort();
+    } else {
+      this.blockedProviders.delete(provider);
+    }
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {
@@ -71,15 +81,31 @@ export class GatewayClient {
         : {}),
     };
     const t0 = Date.now();
+    const ctrl = new AbortController();
+    let set = this.inflight.get(req.provider);
+    if (!set) {
+      set = new Set();
+      this.inflight.set(req.provider, set);
+    }
+    set.add(ctrl);
     let res: Response;
     try {
       res = await this.fetch(`${url}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
         body: JSON.stringify(body),
+        signal: ctrl.signal,
       });
     } catch (err) {
-      throw new GatewayError(`network: ${(err as Error).message}`, 0, req.provider);
+      const msg = (err as Error).message;
+      const aborted = ctrl.signal.aborted || /aborted|abort/i.test(msg);
+      throw new GatewayError(
+        aborted ? "provider killed by chaos" : `network: ${msg}`,
+        aborted ? 503 : 0,
+        req.provider,
+      );
+    } finally {
+      set.delete(ctrl);
     }
     const via = this.effectiveMode(req.provider);
     if (!res.ok) {

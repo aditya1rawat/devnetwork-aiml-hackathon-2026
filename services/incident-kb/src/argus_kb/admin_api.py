@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from argus_kb.case_graph import fetch_case_subgraph
 from argus_kb.graph import clear_group, close_all, get_graphiti, get_neo4j_driver
-from argus_kb.ingest import IncidentBundle, build_episode_body, schedule_ingest
+from argus_kb.ingest import IncidentBundle, build_episode_body, get_job_state, schedule_ingest
 from argus_kb.config import settings
 from argus_kb.report import fetch_incident_report
 
@@ -42,6 +42,16 @@ async def admin_ingest(bundle: IncidentBundle) -> dict[str, str]:
 async def admin_reset() -> dict[str, bool]:
     await clear_group()
     return {"ok": True}
+
+
+@app.get("/admin/ingest/status/{incident_id}")
+async def ingest_status(incident_id: str) -> dict:
+    """Latest ingest job state for an incident. Used by the UI's case-graph
+    panel to show live progress while Graphiti is extracting entities."""
+    state = get_job_state(incident_id)
+    if state is None:
+        return {"incident_id": incident_id, "state": "unknown"}
+    return state
 
 
 @app.get("/case-graph/{incident_id}")

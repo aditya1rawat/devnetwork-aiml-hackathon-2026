@@ -31,6 +31,17 @@ export interface CaseGraph {
   focus_id: string;
 }
 
+export interface IngestStatus {
+  incident_id: string;
+  state: "unknown" | "queued" | "running" | "done" | "failed";
+  job_id?: string;
+  started_at?: number | null;
+  finished_at?: number | null;
+  extraction_calls?: number;
+  elapsed_s?: number;
+  last_error?: string | null;
+}
+
 export interface StoredIncidentReport {
   incident_id: string;
   title?: string;
@@ -68,6 +79,12 @@ export class IncidentKbClient {
     const r = await fetch(`${this.adminUrl}/case-graph/${encodeURIComponent(incidentId)}`);
     if (!r.ok) throw new Error(`kb caseGraph failed: ${r.status}`);
     return (await r.json()) as CaseGraph;
+  }
+
+  async ingestStatus(incidentId: string): Promise<IngestStatus> {
+    const r = await fetch(`${this.adminUrl}/admin/ingest/status/${encodeURIComponent(incidentId)}`);
+    if (!r.ok) throw new Error(`kb ingestStatus failed: ${r.status}`);
+    return (await r.json()) as IngestStatus;
   }
 
   /** Returns the stored report, or null if the incident isn't in the KB. */

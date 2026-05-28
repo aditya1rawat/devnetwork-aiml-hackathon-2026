@@ -285,7 +285,7 @@ export function buildApp(deps: AppDeps) {
       incidentId: id,
       primaryModel: process.env.CLAUDE_MODEL ?? "anthropic/claude-sonnet-4-6",
       shadowModel: process.env.NEMOTRON_MODEL ?? "nvidia/nemotron",
-      maxSteps: 18,
+      maxSteps: 14,
       enableShadow: true,
       providers: deps.registry,
       emit: (e) => {
@@ -295,6 +295,25 @@ export function buildApp(deps: AppDeps) {
         if (e.type === "incident_done") {
           entry.done = true;
           entry.endedAt = Date.now();
+          // Clear any chaos state set during this investigation. Without this,
+          // a "kill claude" from a previous demo run leaves the killed flag set
+          // and trips the next incident's primary precheck. Each run starts
+          // clean. Pre-staging chaos before /scenarios/:id/start still works.
+          if (deps.chaosState.killClaude) {
+            deps.chaosState.killClaude = false;
+            deps.gateway.setProviderBlocked("claude", false);
+            broadcastProviderState("claude", false, "auto-restore");
+          }
+          if (deps.chaosState.killNemotron) {
+            deps.chaosState.killNemotron = false;
+            deps.gateway.setProviderBlocked("nemotron", false);
+            broadcastProviderState("nemotron", false, "auto-restore");
+          }
+          if (deps.chaosState.gatewayDown) {
+            deps.chaosState.gatewayDown = false;
+            deps.gateway.setMode("gateway");
+            broadcastGatewayMode("gateway");
+          }
           // Persist before triggering KB ingest so a crash mid-ingest still
           // leaves the live view recoverable.
           saveIncident({
@@ -573,6 +592,17 @@ export function buildApp(deps: AppDeps) {
       const msg = (err as Error).message;
       if (msg.includes("404")) return c.json({ error: "not in kb yet" }, 404);
       return c.json({ error: msg }, 502);
+    }
+  });
+
+  app.get("/incident/:id/ingest-status", async (c) => {
+    if (!deps.kb) return c.json({ error: "kb unavailable" }, 503);
+    const id = c.req.param("id");
+    try {
+      const status = await deps.kb.ingestStatus(id);
+      return c.json(status);
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 502);
     }
   });
 

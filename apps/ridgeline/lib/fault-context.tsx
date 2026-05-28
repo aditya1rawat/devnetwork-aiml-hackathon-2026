@@ -21,8 +21,13 @@ export function FaultProvider({ children }: { children: ReactNode }) {
 
   // Append, deduped by scenario — re-raising the same incident (e.g. on page
   // remount) is a no-op, so toasts stack one-per-scenario.
+  // Brief beat (1.2s) between the fault appearing on the product surface and
+  // Argus reacting: lets the operator process the error before AI swoops in,
+  // making the staging feel less canned.
   const raise = useCallback((fault: Fault) => {
-    setFaults((prev) => (prev.some((f) => f.scenario === fault.scenario) ? prev : [...prev, fault]));
+    setTimeout(() => {
+      setFaults((prev) => (prev.some((f) => f.scenario === fault.scenario) ? prev : [...prev, fault]));
+    }, 1200);
   }, []);
 
   const dismiss = useCallback((scenario: string) => {

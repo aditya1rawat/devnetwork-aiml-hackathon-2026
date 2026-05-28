@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -16,6 +18,41 @@ from argus_kb.graph import get_graphiti, get_neo4j_driver
 from argus_kb.ontology import ENTITY_TYPES
 
 log = logging.getLogger(__name__)
+
+
+# Per-incident ingest job state. Keyed by incident_id (not job_id) so the
+# UI can poll status with just the incident id even after a restart loses
+# the original job_id. Latest job wins on re-ingest.
+_JOB_STATE: dict[str, dict] = {}
+# ContextVar set inside _run_ingest so the rate-limited LLM client can
+# attribute each extraction call to the right job without an explicit handle.
+_CURRENT_INCIDENT: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_incident_id", default=None
+)
+
+
+def record_extraction_call() -> None:
+    """Bump the active incident's extraction-call counter. Called by the
+    rate-limited Graphiti LLM client after each successful generation."""
+    iid = _CURRENT_INCIDENT.get()
+    if not iid:
+        return
+    state = _JOB_STATE.get(iid)
+    if state is None:
+        return
+    state["extraction_calls"] = state.get("extraction_calls", 0) + 1
+
+
+def get_job_state(incident_id: str) -> dict | None:
+    state = _JOB_STATE.get(incident_id)
+    if state is None:
+        return None
+    out = dict(state)
+    if state.get("state") == "running" and state.get("started_at"):
+        out["elapsed_s"] = max(0.0, time.time() - state["started_at"])
+    elif state.get("started_at") and state.get("finished_at"):
+        out["elapsed_s"] = max(0.0, state["finished_at"] - state["started_at"])
+    return out
 
 VALID_SEVERITIES = {"sev1", "sev2", "sev3"}
 _RATE_LIMIT_RETRIES = 6
@@ -145,6 +182,15 @@ def schedule_ingest(b: IncidentBundle) -> str:
     """
     validate_bundle(b)
     job_id = f"ingest-{uuid.uuid4().hex[:12]}"
+    _JOB_STATE[b.incident_id] = {
+        "job_id": job_id,
+        "incident_id": b.incident_id,
+        "state": "queued",
+        "started_at": None,
+        "finished_at": None,
+        "extraction_calls": 0,
+        "last_error": None,
+    }
     queue = _ensure_worker()
     queue.put_nowait((b, job_id))
     return job_id
@@ -183,35 +229,48 @@ async def _run_ingest(b: IncidentBundle, job_id: str) -> None:
     if reference_time.tzinfo is None:
         reference_time = reference_time.replace(tzinfo=timezone.utc)
 
-    for attempt in range(_RATE_LIMIT_RETRIES):
-        try:
-            await g.add_episode(
-                name=name,
-                episode_body=body,
-                source_description="argus-final-report",
-                source=EpisodeType.text,
-                reference_time=reference_time,
-                group_id=settings.graphiti_group_id,
-                entity_types=ENTITY_TYPES,
-            )
-            # graphiti's add_episode owns Episodic node creation, so we tag
-            # provenance separately afterward. Lets the report endpoint /
-            # archive view distinguish Argus-resolved vs pre-Argus cases
-            # without parsing it out of the body string.
-            await _set_episode_provenance(name, b.provenance)
-            await _set_episode_report(name, b.report_md)
-            log.info("ingest done: incident=%s job=%s provenance=%s", b.incident_id, job_id, b.provenance)
-            return
-        except Exception as e:
-            # Retry transient provider errors: 429 rate limit and 503/overload
-            # spikes both clear on their own. Validation already ran, so any
-            # error here is from the LLM call.
-            transient = isinstance(e, RateLimitError) or any(
-                tok in str(e).lower() for tok in ("503", "unavailable", "overload", "rate limit", "429")
-            )
-            if attempt == _RATE_LIMIT_RETRIES - 1 or not transient:
-                log.error("ingest failed for %s job=%s: %s", b.incident_id, job_id, e)
+    state = _JOB_STATE.setdefault(b.incident_id, {
+        "job_id": job_id, "incident_id": b.incident_id, "state": "queued",
+        "started_at": None, "finished_at": None, "extraction_calls": 0, "last_error": None,
+    })
+    state["state"] = "running"
+    state["started_at"] = time.time()
+    token = _CURRENT_INCIDENT.set(b.incident_id)
+
+    try:
+        for attempt in range(_RATE_LIMIT_RETRIES):
+            try:
+                await g.add_episode(
+                    name=name,
+                    episode_body=body,
+                    source_description="argus-final-report",
+                    source=EpisodeType.text,
+                    reference_time=reference_time,
+                    group_id=settings.graphiti_group_id,
+                    entity_types=ENTITY_TYPES,
+                )
+                # graphiti's add_episode owns Episodic node creation, so we tag
+                # provenance separately afterward. Lets the report endpoint /
+                # archive view distinguish Argus-resolved vs pre-Argus cases
+                # without parsing it out of the body string.
+                await _set_episode_provenance(name, b.provenance)
+                await _set_episode_report(name, b.report_md)
+                state["state"] = "done"
+                state["finished_at"] = time.time()
+                log.info("ingest done: incident=%s job=%s provenance=%s", b.incident_id, job_id, b.provenance)
                 return
-            wait = _RATE_LIMIT_BACKOFF_S * (attempt + 1)
-            log.warning("transient error on %s, retry %d after %.0fs: %s", b.incident_id, attempt + 1, wait, str(e)[:80])
-            await asyncio.sleep(wait)
+            except Exception as e:
+                transient = isinstance(e, RateLimitError) or any(
+                    tok in str(e).lower() for tok in ("503", "unavailable", "overload", "rate limit", "429")
+                )
+                if attempt == _RATE_LIMIT_RETRIES - 1 or not transient:
+                    state["state"] = "failed"
+                    state["finished_at"] = time.time()
+                    state["last_error"] = str(e)[:240]
+                    log.error("ingest failed for %s job=%s: %s", b.incident_id, job_id, e)
+                    return
+                wait = _RATE_LIMIT_BACKOFF_S * (attempt + 1)
+                log.warning("transient error on %s, retry %d after %.0fs: %s", b.incident_id, attempt + 1, wait, str(e)[:80])
+                await asyncio.sleep(wait)
+    finally:
+        _CURRENT_INCIDENT.reset(token)

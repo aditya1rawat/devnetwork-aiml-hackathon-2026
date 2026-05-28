@@ -6,6 +6,7 @@ import { RelatedCasesList } from "./related-cases-list";
 
 export function FinalReport({ events, incidentId }: { events: StreamEvent[]; incidentId: string }) {
   const [fullscreen, setFullscreen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const md = useMemo(() => {
     const e = [...events].reverse().find((x) => x.type === "incident_done");
@@ -39,20 +40,31 @@ export function FinalReport({ events, incidentId }: { events: StreamEvent[]; inc
         <section className="mt-10 border-t border-[var(--color-border)] pt-6">
           <header className="mb-4 flex items-baseline justify-between gap-4">
             <h3 className="font-mono-label text-[var(--color-fg-dim)]">knowledge graph neighborhood</h3>
-            <button
-              type="button"
-              onClick={() => setFullscreen(true)}
-              className="rounded-md border border-[var(--color-border)] px-2.5 py-1 font-mono-label text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-2)]/60"
-              aria-label="open case graph fullscreen"
-            >
-              ⛶ fullscreen
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setRefreshKey((k) => k + 1)}
+                className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-[18px] leading-none text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-2)]/60"
+                aria-label="refresh case graph"
+                title="refresh"
+              >
+                ↻
+              </button>
+              <button
+                type="button"
+                onClick={() => setFullscreen(true)}
+                className="rounded-md border border-[var(--color-border)] px-2.5 py-1 font-mono-label text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-2)]/60"
+                aria-label="open case graph fullscreen"
+              >
+                ⛶ fullscreen
+              </button>
+            </div>
           </header>
-          <CaseGraph incidentId={incidentId} height={360} />
+          <CaseGraph key={refreshKey} incidentId={incidentId} height={360} halted={halted} />
           <RelatedCasesList events={events} />
           {halted ? (
             <p className="mt-4 font-mono-label text-[var(--color-warn)]">
-              halted — not auto-saved to knowledge base
+              failed — not auto-saved to knowledge base
             </p>
           ) : null}
         </section>
@@ -75,7 +87,7 @@ export function FinalReport({ events, incidentId }: { events: StreamEvent[]; inc
             >
               ✕ close
             </button>
-            <CaseGraph incidentId={incidentId} height="100%" />
+            <CaseGraph key={refreshKey} incidentId={incidentId} height="100%" halted={halted} />
           </div>
         </div>
       ) : null}

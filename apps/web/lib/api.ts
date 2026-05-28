@@ -132,6 +132,24 @@ export async function getCaseGraph(id: string): Promise<CaseGraph | null> {
   return (await r.json()) as CaseGraph;
 }
 
+export interface IngestStatus {
+  incident_id: string;
+  state: "unknown" | "queued" | "running" | "done" | "failed";
+  job_id?: string;
+  started_at?: number | null;
+  finished_at?: number | null;
+  extraction_calls?: number;
+  elapsed_s?: number;
+  last_error?: string | null;
+}
+
+export async function getIngestStatus(id: string): Promise<IngestStatus | null> {
+  const r = await fetch(`${ORCH}/incident/${id}/ingest-status`, { cache: "no-store" });
+  if (r.status === 503) return null;
+  if (!r.ok) throw new Error(`ingest-status ${r.status}`);
+  return (await r.json()) as IngestStatus;
+}
+
 export interface StoredIncidentReport {
   incident_id: string;
   title?: string;

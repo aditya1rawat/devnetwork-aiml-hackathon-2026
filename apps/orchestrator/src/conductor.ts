@@ -165,7 +165,7 @@ function modelFor(provider: ProviderName, opts: ConductorOpts): string {
 
 function buildMessages(s: IncidentState, finalStep = false) {
   const nudge = finalStep
-    ? `\n\nThis is your FINAL allowed step. You MUST reply with action="report" and a markdown summary in args.markdown covering: most likely root cause, supporting evidence from your investigation, and recommended remediation. Do not call any other tool.`
+    ? `\n\nThis is your FINAL allowed step. You MUST reply with action="report" and args.markdown containing a complete final report. Do NOT call any tool. Use your best hypothesis even if evidence is partial — partial conclusions are acceptable and expected at this point. The markdown should cover: most likely root cause (your best guess given what you've gathered), supporting evidence (cite what you found in earlier steps), and recommended remediation. Failure to report now leaves the investigation incomplete.`
     : "";
   return [
     { role: "system" as const, content: s.messages[0]!.content },

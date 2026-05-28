@@ -20,7 +20,7 @@ import {
   type InternalNode,
   type NodeProps,
 } from "@xyflow/react";
-import { getCaseGraph, type CaseGraph as CaseGraphData } from "@/lib/api";
+import { getCaseGraph, getIngestStatus, type CaseGraph as CaseGraphData, type IngestStatus } from "@/lib/api";
 
 /** Prior-cases constellation, interactive.
  *
@@ -251,32 +251,60 @@ function buildGraph(derived: Derived): { nodes: Node[]; edges: Edge[] } {
   return { nodes, edges };
 }
 
-export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; height?: number | string }) {
+export function CaseGraph({ incidentId, height = 360, halted = false }: { incidentId: string; height?: number | string; halted?: boolean }) {
   const [data, setData] = useState<CaseGraphData | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [ingest, setIngest] = useState<IngestStatus | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
+  // Fetch the case graph; null = not in KB yet (ingest still running).
   useEffect(() => {
     let alive = true;
-    setLoading(true);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const tick = async (initial: boolean) => {
+      if (initial) setLoading(true);
+      try {
+        const g = await getCaseGraph(incidentId);
+        if (!alive) return;
+        if (g && g.nodes.length > 0) {
+          setData(g);
+          setIngest(null);
+          setLoading(false);
+          return;
+        }
+        // Halted investigations don't get ingested — no point polling.
+        if (halted) {
+          setIngest(null);
+          setLoading(false);
+          return;
+        }
+        // Graph not ready yet — check ingest status and reschedule.
+        const s = await getIngestStatus(incidentId).catch(() => null);
+        if (!alive) return;
+        setIngest(s);
+        setLoading(false);
+        if (s?.state === "failed") {
+          setErr(s.last_error || "ingest failed");
+          return;
+        }
+        timer = setTimeout(() => tick(false), 2000);
+      } catch (e) {
+        if (!alive) return;
+        setErr((e as Error).message);
+        setLoading(false);
+      }
+    };
+
     setErr(null);
-    getCaseGraph(incidentId)
-      .then((g) => {
-        if (!alive) return;
-        setData(g);
-        setLoading(false);
-      })
-      .catch((e: Error) => {
-        if (!alive) return;
-        setErr(e.message);
-        setLoading(false);
-      });
+    void tick(true);
     return () => {
       alive = false;
+      if (timer) clearTimeout(timer);
     };
-  }, [incidentId]);
+  }, [incidentId, halted]);
 
   const built = useMemo(() => (data ? buildGraph(derive(data)) : null), [data]);
 
@@ -299,12 +327,15 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
     [setNodes],
   );
 
-  const state: "loading" | "error" | "empty" | "ready" = loading
+  const ingestActive = ingest && (ingest.state === "queued" || ingest.state === "running");
+  const state: "loading" | "error" | "ingesting" | "empty" | "ready" = loading
     ? "loading"
     : err
       ? "error"
       : !data || data.nodes.length === 0
-        ? "empty"
+        ? ingestActive
+          ? "ingesting"
+          : "empty"
         : "ready";
 
   return (
@@ -314,7 +345,14 @@ export function CaseGraph({ incidentId, height = 360 }: { incidentId: string; he
     >
       {state === "loading" ? <Centered>loading case graph…</Centered> : null}
       {state === "error" ? <Centered>case graph unavailable: {err}</Centered> : null}
-      {state === "empty" ? <Centered>Incident seeding — knowledge graph will populate shortly</Centered> : null}
+      {state === "ingesting" ? <IngestProgress status={ingest!} /> : null}
+      {state === "empty" ? (
+        <Centered>
+          {halted
+            ? "Investigation failed — not saved to knowledge base"
+            : "Incident seeding — knowledge graph will populate shortly"}
+        </Centered>
+      ) : null}
 
       {state === "ready" ? (
         <>
@@ -356,6 +394,52 @@ function Centered({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full items-center justify-center px-6 text-center font-mono-label text-[var(--color-fg-dim)]">
       {children}
+    </div>
+  );
+}
+
+// Live ingest counter shown while Graphiti is extracting entities for this
+// incident. `started_at` is unix-seconds from the KB; we tick locally so the
+// counter updates every second between status polls.
+function IngestProgress({ status }: { status: IngestStatus }) {
+  const startedAt = status.started_at ?? null;
+  const seedElapsed = status.elapsed_s ?? 0;
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const elapsed = startedAt ? Math.max(0, now - startedAt) : seedElapsed;
+  const calls = status.extraction_calls ?? 0;
+
+  return (
+    <div className="flex h-full items-center justify-center px-6">
+      <div className="flex flex-col items-center gap-5">
+        <div className="font-mono-label text-[var(--color-fg-muted)]">
+          ingesting incident into knowledge graph
+        </div>
+        <div className="flex flex-col gap-2 font-mono text-[12.5px] text-[var(--color-fg)]">
+          <Counter label="extractions" value={`${calls}`} />
+          <Counter label="elapsed" value={`${Math.round(elapsed)}s`} />
+        </div>
+        <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-fg-dim)]">
+          crusoe · nemotron-3-nano · graphiti
+        </div>
+      </div>
+      <style>{`@keyframes cg-pulse { 0%,100% { opacity: 0.35 } 50% { opacity: 1 } }`}</style>
+    </div>
+  );
+}
+
+function Counter({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]"
+        style={{ animation: "cg-pulse 1.6s ease-in-out infinite" }}
+      />
+      <span className="w-32 text-[var(--color-fg-muted)]">{label}</span>
+      <span className="tabular-nums text-[var(--color-fg)]">{value}</span>
     </div>
   );
 }
