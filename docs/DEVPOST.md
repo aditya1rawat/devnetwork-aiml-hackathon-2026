@@ -35,7 +35,7 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 - **TrueFoundry AI Gateway** for provider routing + automatic direct-mode fallback when the Gateway itself fails.
 - **Crusoe Cloud Managed Inference** hosts Nemotron as the shadow cognition.
 - **MCP servers** wrap our (mock) observability stack: logs / metrics / traces / runbook / incident-kb. Each is wrapped with retry + circuit breaker + synthetic-response fallback.
-- **Incident Knowledge Base** built on Python FastAPI, backed by Neo4j + Graphiti. Ontology: incidents → services → root causes → remediations, with bi-temporal edges. MCP tool for agent retrieval, admin API for ingest/seed/reset.
+- **Incident Knowledge Base** built on Python FastAPI, backed by Neo4j + Graphiti. Ontology: incidents → services → root causes → remediations, with bi-temporal edges. Graphiti's entity extraction + rerank run on Crusoe-hosted Nemotron Nano — the same model family as the shadow cognition — paced through a shared token-bucket limiter so live ingest stays well under provider RPM. MCP tool for agent retrieval, admin API for ingest/seed/reset.
 - **Python FastAPI** mock service cluster (api / worker / db_proxy / auth) with chaos injection endpoints.
 - **Ridgeline app** with 4 surfaces (Overview dashboard, Sign In, Query Studio, Batch Jobs), each with an embedded fault trigger and Argus launcher overlay.
 
@@ -62,7 +62,7 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 
 - **The Gateway abstraction earns its complexity the moment chaos hits.** When everything is healthy, a gateway looks like an unnecessary middleman. The moment you need to reroute between providers, fall back to direct API calls, or inject chaos for testing, it becomes the single control point that makes all of that possible without touching application code.
 
-- **A knowledge base that ingests its own outputs creates a genuine learning loop.** We expected the KB to be a nice-to-have. It turned out to be the agent's strongest reasoning aid. When Argus retrieves three prior incidents with the same service and a similar symptom, it converges on the root cause faster and with higher confidence. Each resolved incident makes the next one smarter, with no human curating a knowledge base.
+- **A knowledge base that ingests its own outputs creates a genuine learning loop.** We expected the KB to be a nice-to-have. It turned out to be the agent's strongest reasoning aid. When Argus retrieves three prior incidents with the same service and a similar symptom, it converges on the root cause faster and with higher confidence. Each resolved incident makes the next one smarter, with no human curating a knowledge base. (Bonus coherence: the Crusoe-hosted Nemotron Nano that drives the shadow cognition also writes the graph — one inference provider end-to-end on the open-source side.)
 
 - **Product-embedded AI triggers are the right UX for on-call operators.** Dashboards and chatbots require a context switch. The operator is already staring at the broken thing. Embedding the trigger directly in the product surface (a failed sign-in, a saturated query, a climbing heap bar) means detection and response start from the same screen.
 

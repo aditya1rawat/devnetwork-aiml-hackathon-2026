@@ -84,6 +84,8 @@ A spoken-word runbook for the live demo. `[DO]` = what you click. `[SAY]` = what
 
 `[SAY]` "And this is the store underneath it — Neo4j, built with Graphiti. It's a real bi-temporal graph: incidents, services, root causes, and remediations as typed nodes, linked by typed relationships, every edge stamped with when it was valid. That panel on the left is the live schema — Incident, Service, Remediation nodes; RELATES_TO and MENTIONS edges; valid_at / invalid_at timestamps. This isn't a vector blob — it's queryable structure that compounds with every incident Argus closes."
 
+> If a judge asks how the graph is populated: the same Crusoe-hosted Nemotron Nano that runs the shadow cognition also drives Graphiti's entity extraction. One inference provider, end-to-end, on the open-source side. Live ingest of a resolved investigation takes ~60s.
+
 > Numbers on screen for reference: ~48 nodes, ~118 relationships (Entity, Episodic, Incident, Remediation, Service node types). Don't dwell — it's a 10-second "this is real" beat, then move on.
 
 ---

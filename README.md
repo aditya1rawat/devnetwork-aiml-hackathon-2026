@@ -57,9 +57,9 @@ cp .env.example .env.local   # fill in API keys
 
 Required keys in `.env.local`:
 
-- `TRUEFOUNDRY_API_KEY` — AI Gateway routing (Claude + Nemotron)
-- `ANTHROPIC_API_KEY` / `CRUSOE_API_KEY` — direct-mode fallback providers
-- `CRUSOE_API_KEY` — Graphiti entity extraction + rerank (Nemotron, primary). TFY (Sonnet via `TRUEFOUNDRY_API_KEY`) is the configurable backup.
+- `TRUEFOUNDRY_API_KEY` — AI Gateway routing for the conductor (Claude Sonnet primary, Haiku triage). Also the configurable backup for KB extraction (`GRAPHITI_LLM_PROVIDER=tfy`).
+- `ANTHROPIC_API_KEY` — direct-mode fallback if the TFY gateway is down.
+- `CRUSOE_API_KEY` — Crusoe Cloud Managed Inference. Hosts the Nemotron Nano shadow cognition **and** drives Graphiti's KB extraction + rerank (primary, ~60s per live incident).
 - Neo4j defaults (`bolt://localhost:7687`, `neo4j` / `devpass`) work out of the box with the bundled Docker compose.
 
 ### Run the stack
