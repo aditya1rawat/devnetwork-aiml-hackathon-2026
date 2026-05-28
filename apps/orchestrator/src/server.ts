@@ -217,15 +217,6 @@ export function buildApp(deps: AppDeps) {
     }),
   );
 
-  // CORS for the web app
-  app.use("*", async (c, next) => {
-    c.res.headers.set("access-control-allow-origin", "*");
-    c.res.headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
-    c.res.headers.set("access-control-allow-headers", "content-type");
-    if (c.req.method === "OPTIONS") return c.body(null, 204);
-    await next();
-  });
-
   const SEVERITY_BY_SCENARIO: Record<string, "sev1" | "sev2" | "sev3"> = {
     "worker-oom": "sev2",
     "db-saturation": "sev1",
