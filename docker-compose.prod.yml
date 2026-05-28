@@ -83,10 +83,8 @@ services:
       MOCK_CLUSTER_URL: http://cluster:7100
       INCIDENT_KB_MCP_URL: http://kb:7300/mcp
       INCIDENT_KB_ADMIN_URL: http://kb:7301
-    ports:
-      # Published until Caddy + TLS terminate at :443. After Caddy is up,
-      # change this back to `expose:` so only Caddy reaches orch.
-      - "7200:7200"
+    expose:
+      - "7200"  # internal only — Caddy reverse-proxies from :443
     volumes:
       # Persistent incident-store survives rebuilds; otherwise rehydration
       # loses every resolved case the moment the container restarts.

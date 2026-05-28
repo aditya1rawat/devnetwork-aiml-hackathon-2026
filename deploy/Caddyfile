@@ -7,7 +7,7 @@
 # The Vercel-hosted frontends (web + ridgeline) hit this host over HTTPS;
 # CORS is enforced inside the orchestrator via the CORS_ORIGINS env var.
 
-orch.example.com {
+orch.64-23-239-2.sslip.io {
     encode zstd gzip
 
     # SSE needs unbuffered streaming for /incident/:id/stream to feel live.
