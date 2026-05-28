@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node --env-file=../../.env.local --import tsx --watch src/index.ts",
     "start": "node --env-file=../../.env.local --import tsx src/index.ts",
+    "start:prod": "node --import tsx src/index.ts",
     "smoke": "node --env-file=../../.env.local --import tsx scripts/smoke.ts",
     "build": "tsc -p .",
     "test": "vitest run",

@@ -1,0 +1,35 @@
+# Source-tree noise that should NOT bake into any Docker image.
+
+# Node
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/build
+**/*.tsbuildinfo
+
+# Python
+**/__pycache__
+**/.venv
+**/.pytest_cache
+**/*.pyc
+
+# Local dev state — must never ship into a prod image. Compose mounts a
+# fresh volume for the runtime store.
+apps/orchestrator/data
+services/incident-kb/data
+
+# Secrets + plugin caches
+.env
+.env.local
+.env.*.local
+.hydradb-plugin-data
+
+# Editor / OS
+.DS_Store
+.idea
+.vscode
+
+# Git (Docker doesn't need it)
+.git
+.gitignore

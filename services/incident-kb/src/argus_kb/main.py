@@ -7,9 +7,19 @@ from pathlib import Path
 # auto-load the env file, and pydantic only reads it for Settings fields, so
 # os.getenv (graphiti's SEMAPHORE_LIMIT, our EXTRACTION_RPM_LIMIT) would
 # otherwise see None. Spawned children re-import this module, so they get it too.
+#
+# In dev the file lives 4 dirs above this module (repo root); in Docker the
+# package is installed at /app/src/argus_kb/main.py and the env is supplied
+# by `env_file:` in docker-compose, so .env.local won't exist. Either way is
+# fine — load_dotenv is a no-op if the path is missing.
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parents[4] / ".env.local")
+try:
+    _env_path = Path(__file__).resolve().parents[4] / ".env.local"
+except IndexError:
+    _env_path = None
+if _env_path is not None:
+    load_dotenv(_env_path)
 
 import uvicorn
 
