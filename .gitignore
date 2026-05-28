@@ -21,3 +21,5 @@ apps/orchestrator/data/
 
 # brainstorming visual companion
 .superpowers/
+neo4j.dump
+deploy/neo4j.dump
