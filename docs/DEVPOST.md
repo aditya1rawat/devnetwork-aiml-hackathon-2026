@@ -35,7 +35,7 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 - **TrueFoundry AI Gateway** for provider routing + automatic direct-mode fallback when the Gateway itself fails.
 - **Crusoe Cloud Managed Inference** hosts Nemotron as the shadow cognition.
 - **MCP servers** wrap our (mock) observability stack: logs / metrics / traces / runbook / incident-kb. Each is wrapped with retry + circuit breaker + synthetic-response fallback.
-- **Incident Knowledge Base** built on Python FastAPI, backed by Neo4j + Graphiti. Ontology: incidents → services → root causes → remediations, with bi-temporal edges. Graphiti's entity extraction + rerank run on Crusoe-hosted Nemotron Nano — the same model family as the shadow cognition — paced through a shared token-bucket limiter so live ingest stays well under provider RPM. MCP tool for agent retrieval, admin API for ingest/seed/reset.
+- **Incident Knowledge Base** built on Python FastAPI, backed by Neo4j + Graphiti. Ontology: incidents → services → root causes → remediations, with bi-temporal edges. Graphiti's entity extraction + rerank run on Crusoe-hosted Nemotron Nano — the same model family as the shadow cognition — paced through a shared token-bucket limiter so live ingest stays well under provider RPM. Per-incident ingest state (queued / running / done / failed, extraction-call counter) is tracked via a `contextvars.ContextVar` hook on the rate-limited LLM client and surfaced through an admin `/admin/ingest/status/{id}` endpoint so the UI can render a live counter while Graphiti is writing. MCP tool for agent retrieval, admin API for ingest/seed/reset.
 - **Python FastAPI** mock service cluster (api / worker / db_proxy / auth) with chaos injection endpoints.
 - **Ridgeline app** with 4 surfaces (Overview dashboard, Sign In, Query Studio, Batch Jobs), each with an embedded fault trigger and Argus launcher overlay.
 
@@ -43,13 +43,13 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 
 - Shadow execution at scale: keeping two LLM streams synchronized while only executing one set of tool calls.
 - Detecting "brownout" (slow but not failed) without an embedding model. We ended up using token-set similarity as a pragmatic surrogate.
-- Failover across mid-flight tool calls. We punted on this; failover happens between steps in the MVP.
+- Mid-flight failover. Initially a kill-provider chaos action only blocked the next call, so the current step still finished on the dying provider. We added an `AbortController` per in-flight chat call inside the gateway, and `setProviderBlocked` now aborts the controllers — failover takes effect mid-step, the way it would in a real outage.
 - Knowledge graph ingest: Graphiti's entity extraction needs a high-throughput LLM, and we tried four. Gemini (20 RPM) and Groq (12k TPM under Graphiti's ~18k prompt) were rate-limited unusably. NVIDIA NIM (llama-3.3-70b) worked for seed ingest but its 40 RPM ceiling couldn't carry a live incident's ~100-call extraction burst even after we added a token-bucket limiter, retry-stripping, and a compact-payload rewrite. We finally moved extraction and reranking to Crusoe Cloud Managed Inference running NVIDIA Nemotron-3-Nano-Omni-Reasoning — the same model family already hosting the shadow cognition — and live ingest now completes in seconds.
 - Two-brand visual design: Argus (cool violet, serif italic) and Ridgeline (warm green, monospace) needed to be instantly distinguishable side-by-side while both looking like real products.
 
 ### Accomplishments we're proud of
 
-- Live demo: kill Claude mid-investigation. Nemotron carries the reasoning. Zero rebuild.
+- Live demo: kill Claude mid-investigation. The in-flight call cancels, Nemotron carries the reasoning, the timeline picks up at the next step. Zero rebuild.
 - Live demo: sever TrueFoundry Gateway. Direct-mode kicks in. Investigation completes.
 - Dual cognition is a feature, not just a fallback. It's a built-in hallucination detector.
 - Live demo: trigger a fault from inside a product UI. Argus detects it, triages with AI, and opens a full investigation without the operator ever leaving context.
@@ -65,6 +65,8 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 - **A knowledge base that ingests its own outputs creates a genuine learning loop.** We expected the KB to be a nice-to-have. It turned out to be the agent's strongest reasoning aid. When Argus retrieves three prior incidents with the same service and a similar symptom, it converges on the root cause faster and with higher confidence. Each resolved incident makes the next one smarter, with no human curating a knowledge base. (Bonus coherence: the Crusoe-hosted Nemotron Nano that drives the shadow cognition also writes the graph — one inference provider end-to-end on the open-source side.)
 
 - **Product-embedded AI triggers are the right UX for on-call operators.** Dashboards and chatbots require a context switch. The operator is already staring at the broken thing. Embedding the trigger directly in the product surface (a failed sign-in, a saturated query, a climbing heap bar) means detection and response start from the same screen.
+
+- **A brief beat between failure and AI reaction sells the simulation.** Our first cut fired the Argus alert the instant the fault surfaced; it felt staged. Adding a deliberate ~1.2s delay between the product surface going red and the Argus launcher flaring made the demo feel like an operator-and-agent collaboration instead of a scripted reel — the operator gets to register the problem first.
 
 ### What's next
 

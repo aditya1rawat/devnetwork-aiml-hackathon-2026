@@ -88,18 +88,25 @@ Seeding is rate-limited by the extraction provider and runs offline once — nev
 
 ## Demo scenarios
 
-Six incident scenarios are triggerable from the Argus ops board: `worker-oom`, `db-saturation`, `auth-5xx`, `api-brownout`, `db-timeout`, `api-config-drift`.
+Six incident scenarios, each with a Ridgeline product surface that goes into distress and triggers the embedded Argus launcher:
 
-Three also have Ridgeline product surfaces with embedded triggers:
-
-| Surface | Route | Fault | Trigger |
-|---------|-------|-------|---------|
+| Surface | Route | Scenario | Time to fault |
+|---------|-------|----------|---------------|
 | Overview | `/` | — (healthy dashboard) | — |
 | Sign In | `/login` | auth-5xx (503 storm) | ~700ms |
 | Query Studio | `/query` | db-saturation (pool exhaust) | ~2.5s |
 | Batch Jobs | `/jobs` | worker-oom (heap climb) | ~6s |
+| Dashboard | `/app` | api-brownout (panels stall) | ~3s |
+| Connections | `/connections` | db-timeout (rows time out) | ~4s |
+| Deploys | `/deploys` | api-config-drift (rev goes live → 503 spike) | ~3s |
 
-Ridgeline surface timers are page-scoped: navigate away before the fault fires and the timer dies. Full demo walkthroughs live in [`docs/demos/`](docs/demos/).
+Ridgeline surface timers are page-scoped: navigate away before the fault fires and the timer dies. After the fault appears, there is a deliberate ~1.2s beat before the Argus alert flares so the operator can register the failure on the product before the AI reacts. Full demo walkthroughs live in [`docs/demos/`](docs/demos/).
+
+### Demo resilience details
+
+- **Mid-flight chaos abort.** Kill-provider in the chaos panel aborts any in-flight LLM call on that provider; failover kicks in within the current step, not after it finishes. The chaos state automatically clears on `incident_done` so a killed primary doesn't leak into the next run.
+- **Bounded investigations.** The conductor caps at 14 steps with a final-step nudge that forces a partial-conclusion report — investigations resolve consistently rather than ending in an "incomplete" state.
+- **Live ingest progress.** While Graphiti is extracting entities for a resolved incident, the case-graph panel polls `/admin/ingest/status/{id}` and shows a live counter (extractions + elapsed) instead of a generic "seeding" spinner. A `↻` button next to the fullscreen toggle re-polls on demand.
 
 ## Built with
 

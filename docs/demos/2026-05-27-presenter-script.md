@@ -22,9 +22,9 @@ A spoken-word runbook for the live demo. `[DO]` = what you click. `[SAY]` = what
 
 `[SAY]` "A batch worker starts leaking memory. Heap climbs, the job queue backs up… and there it goes — OOM."
 
-`[DO]` Bottom-right **Argus launcher** flares red. Click it.
+`[DO]` Beat (~1.2s) where the surface is red but the Argus launcher hasn't fired yet. Then bottom-right launcher flares red. Click it.
 
-`[SAY]` "Argus detected the fault from inside the product. No dashboard to go hunt, no alert to triage — it's right here."
+`[SAY]` "Argus detected the fault from inside the product. Notice the brief beat where you see the failure before the AI reacts — that's intentional, the operator gets to register the problem first."
 
 `[DO]` Toast holds on "generating…" for ~1s, then streams in the diagnosis + suspected root cause.
 
@@ -54,9 +54,9 @@ A spoken-word runbook for the live demo. `[DO]` = what you click. `[SAY]` = what
 
 `[SAY]` "Watch what happens when I kill the primary mid-thought."
 
-`[DO]` Failover banner appears; investigation continues without restarting.
+`[DO]` Failover banner appears within the current step — no extra "one more primary step" before it kicks in. Investigation continues without restarting.
 
-`[SAY]` "No retry loop. No cold start. The shadow was already mid-investigation, so it just takes over — zero context lost. That's active-active for agents."
+`[SAY]` "No retry loop. No cold start. The shadow was already mid-investigation, so it just takes over — zero context lost. And the kill cancels Claude's in-flight call mid-flight, not after it finishes. That's active-active for agents."
 
 `[DO]` (Optional) **Sever the TrueFoundry Gateway.** Direct-mode banner kicks in.
 
@@ -72,9 +72,11 @@ A spoken-word runbook for the live demo. `[DO]` = what you click. `[SAY]` = what
 
 `[SAY]` "Mid-investigation, Argus queried its own knowledge base — past incidents that share this service, symptom, or root cause. It's not starting cold; it's standing on every postmortem it's ever written."
 
-`[DO]` Let it resolve. Scroll to the final report's **case graph**. Click **⛶ fullscreen**.
+`[DO]` Let it resolve. Scroll to the final report's **case graph** — for a brand-new incident you'll see the live counter ticking (`extractions … elapsed …`) while Graphiti extracts entities, then the graph appears. Click **⛶ fullscreen**.
 
-`[SAY]` "Here's the bi-temporal knowledge graph. This incident at the center, prior worker-memory cases as neighbors, the shared service node, the root-cause node. And when this incident resolves, it gets ingested right back in — so the next investigation is smarter. Resolve, ingest, retrieve, with no human curating anything."
+`[SAY]` "Watch the counter — that's the open-source extraction provider live-writing new entities into the graph. Then this view: the bi-temporal knowledge graph. This incident at the center, prior worker-memory cases as neighbors, the shared service node, the root-cause node. The whole resolve → ingest → retrieve loop, with no human curating anything."
+
+> If the graph appears instantly, the case-graph component has a `↻` refresh button next to fullscreen — you can re-poll without reloading the page. Use it sparingly during a live demo.
 
 ---
 
