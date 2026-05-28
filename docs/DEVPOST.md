@@ -44,7 +44,7 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 - Shadow execution at scale: keeping two LLM streams synchronized while only executing one set of tool calls.
 - Detecting "brownout" (slow but not failed) without an embedding model. We ended up using token-set similarity as a pragmatic surrogate.
 - Failover across mid-flight tool calls. We punted on this; failover happens between steps in the MVP.
-- Knowledge graph seeding: Graphiti's entity extraction needs a high-throughput LLM. Gemini's free tier (20 req/min) and Groq's token budget both choked on Graphiti's ~18k-token prompts, so we moved extraction and reranking to NVIDIA NIM (llama-3.3-70b) over the OpenAI-compatible API, with serialized ingest plus exponential backoff on 429/503 to seed 12 historical incidents cleanly.
+- Knowledge graph ingest: Graphiti's entity extraction needs a high-throughput LLM, and we tried four. Gemini (20 RPM) and Groq (12k TPM under Graphiti's ~18k prompt) were rate-limited unusably. NVIDIA NIM (llama-3.3-70b) worked for seed ingest but its 40 RPM ceiling couldn't carry a live incident's ~100-call extraction burst even after we added a token-bucket limiter, retry-stripping, and a compact-payload rewrite. We finally moved extraction and reranking to Crusoe Cloud Managed Inference running NVIDIA Nemotron-3-Nano-Omni-Reasoning — the same model family already hosting the shadow cognition — and live ingest now completes in seconds.
 - Two-brand visual design: Argus (cool violet, serif italic) and Ridgeline (warm green, monospace) needed to be instantly distinguishable side-by-side while both looking like real products.
 
 ### Accomplishments we're proud of

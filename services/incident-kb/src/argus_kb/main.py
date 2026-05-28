@@ -1,5 +1,15 @@
 import logging
 import multiprocessing as mp
+from pathlib import Path
+
+# Load .env.local into the process env BEFORE anything imports graphiti_core —
+# it reads SEMAPHORE_LIMIT (concurrency cap) once at import. uv run does not
+# auto-load the env file, and pydantic only reads it for Settings fields, so
+# os.getenv (graphiti's SEMAPHORE_LIMIT, our EXTRACTION_RPM_LIMIT) would
+# otherwise see None. Spawned children re-import this module, so they get it too.
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[4] / ".env.local")
 
 import uvicorn
 

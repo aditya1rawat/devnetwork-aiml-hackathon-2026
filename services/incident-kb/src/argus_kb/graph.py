@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import time
 
 from graphiti_core import Graphiti
 from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
@@ -19,11 +21,78 @@ from graphiti_core.embedder.client import EmbedderClient
 from graphiti_core.llm_client.config import LLMConfig
 from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
 from neo4j import AsyncGraphDatabase, exceptions as neo4j_exc
+from openai import AsyncOpenAI
 from sentence_transformers import SentenceTransformer
 
 from argus_kb.config import settings
 
 log = logging.getLogger(__name__)
+
+
+class _TokenBucket:
+    """Async token bucket. Caps extraction calls under the provider's RPM
+    limit — Graphiti serializes (max_coroutines=1) but fires calls back-to-back,
+    so fast (<1.5s) calls still blow NVIDIA NIM's 40 RPM without pacing."""
+
+    def __init__(self, rate_per_min: int) -> None:
+        # Small burst capacity + empty start so requests in ANY 60s window stay
+        # ~capacity+rate. Starting full would let a 35-call burst fire instantly
+        # AND refill another ~35 in the same minute → ~2x the ceiling.
+        self.capacity = 3.0
+        self.tokens = 0.0
+        self.refill_per_s = rate_per_min / 60.0
+        self.updated = time.monotonic()
+        self.lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        while True:
+            async with self.lock:
+                now = time.monotonic()
+                self.tokens = min(self.capacity, self.tokens + (now - self.updated) * self.refill_per_s)
+                self.updated = now
+                if self.tokens >= 1:
+                    self.tokens -= 1
+                    return
+                wait = (1 - self.tokens) / self.refill_per_s
+            await asyncio.sleep(wait)
+
+
+# Shared across extraction + rerank so they draw on ONE provider RPM budget.
+_RATE_BUCKET = _TokenBucket(int(os.getenv("EXTRACTION_RPM_LIMIT", "30")))
+
+
+def _make_openai(cfg: LLMConfig) -> AsyncOpenAI:
+    # max_retries=0: the OpenAI SDK otherwise retries a 429 up to 2x WITHOUT
+    # re-acquiring a bucket token, tripling real RPM past our pacing. Graphiti's
+    # own tenacity layer still retries (and re-acquires), so nothing is lost.
+    return AsyncOpenAI(api_key=cfg.api_key, base_url=cfg.base_url, max_retries=0)
+
+
+class RateLimitedGenericClient(OpenAIGenericClient):
+    """OpenAIGenericClient that paces every LLM call through the shared token
+    bucket so a single ingest stays under the provider RPM ceiling."""
+
+    async def _generate_response(self, *args, **kwargs):
+        await _RATE_BUCKET.acquire()
+        return await super()._generate_response(*args, **kwargs)
+
+
+class RateLimitedReranker(OpenAIRerankerClient):
+    """Routes reranker calls through the SAME bucket as extraction. The
+    reranker hits the same provider and fires one call per passage; left
+    unthrottled it stacks on top of extraction and trips the RPM limit, which
+    fails the all-or-nothing add_episode. Sharing one budget keeps the total
+    under the ceiling."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        _orig_create = self.client.chat.completions.create
+
+        async def _limited(*a, **k):
+            await _RATE_BUCKET.acquire()
+            return await _orig_create(*a, **k)
+
+        self.client.chat.completions.create = _limited  # type: ignore[method-assign]
 
 _graphiti: Graphiti | None = None
 _neo4j_driver = None
@@ -31,33 +100,31 @@ _embed_model: SentenceTransformer | None = None
 
 
 def _provider_config() -> LLMConfig:
-    """OpenAI-compatible config for the active extraction provider."""
-    if settings.graphiti_llm_provider == "crusoe":
+    """OpenAI-compatible config for the active extraction provider.
+
+    Primary: Crusoe (Nemotron Nano) — generous limits, free, same model family
+    as the conductor's shadow cognition. Backup: TrueFoundry gateway (Sonnet)
+    if Crusoe is unreachable. NIM was previously the default but its 40 RPM
+    ceiling couldn't carry Graphiti's burst pattern; removed entirely.
+    """
+    if settings.graphiti_llm_provider == "tfy":
         return LLMConfig(
-            api_key=settings.crusoe_api_key,
-            model=settings.crusoe_model,
-            base_url=settings.crusoe_inference_url,
+            api_key=settings.tfy_api_key,
+            model=settings.tfy_model,
+            base_url=settings.tfy_gateway_url,
         )
-    # default: NVIDIA NIM
+    # default: Crusoe (Nemotron)
     return LLMConfig(
-        api_key=settings.nvidia_api_key,
-        model=settings.nvidia_model,
-        base_url=settings.nvidia_base_url,
+        api_key=settings.crusoe_api_key,
+        model=settings.crusoe_model,
+        base_url=settings.crusoe_inference_url,
     )
 
 
 def _rerank_config() -> LLMConfig:
-    if settings.graphiti_llm_provider == "crusoe":
-        return LLMConfig(
-            api_key=settings.crusoe_api_key,
-            model=settings.crusoe_model,
-            base_url=settings.crusoe_inference_url,
-        )
-    return LLMConfig(
-        api_key=settings.nvidia_api_key,
-        model=settings.nvidia_rerank_model,
-        base_url=settings.nvidia_base_url,
-    )
+    # Reranker is search-time only and low-volume, so reuse the extraction
+    # provider's model — no need for a separate cheap rerank tier.
+    return _provider_config()
 
 
 class LocalEmbedder(EmbedderClient):
@@ -110,8 +177,10 @@ async def get_graphiti() -> Graphiti:
 
     # Extraction LLM + reranker, both on the active OpenAI-compatible provider
     # (NIM or Crusoe). Reranker is search-time only, low volume.
-    llm_client = OpenAIGenericClient(config=_provider_config())
-    reranker = OpenAIRerankerClient(config=_rerank_config())
+    ecfg = _provider_config()
+    rcfg = _rerank_config()
+    llm_client = RateLimitedGenericClient(config=ecfg, client=_make_openai(ecfg))
+    reranker = RateLimitedReranker(config=rcfg, client=_make_openai(rcfg))
     embedder = LocalEmbedder(settings.graphiti_embedder_model)
 
     _graphiti = Graphiti(

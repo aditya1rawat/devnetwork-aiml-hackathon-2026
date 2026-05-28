@@ -246,6 +246,7 @@ export function buildApp(deps: AppDeps) {
     const toolLogDigest = toolLines.join("; ").slice(0, 1200);
 
     const title = scenarioId ? `${scenarioId} ${id}` : `Incident ${id}`;
+    const cfg = scenarioId ? DEMO_SCENARIOS[scenarioId] : undefined;
 
     return {
       incident_id: id,
@@ -257,6 +258,12 @@ export function buildApp(deps: AppDeps) {
       resolved_at: new Date().toISOString(),
       services_touched: servicesTouched,
       tool_log_digest: toolLogDigest,
+      // Structured linking facts so the KB extracts a handful of clean entities
+      // instead of mining the full prose report (keeps Graphiti under the
+      // provider RPM limit). Full report is still stored for retrieval.
+      root_cause: cfg?.rootCause ?? "",
+      symptom: cfg?.symptom ?? "",
+      summary: cfg?.blurb ?? "",
       provenance: "argus" as const,
     };
   }
@@ -413,7 +420,7 @@ export function buildApp(deps: AppDeps) {
       // Some models wrap JSON in ```json fences or prose despite response_format,
       // so pull out the first {...} block before parsing.
       const fenced = res.text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-      const candidate = fenced ? fenced[1] : res.text;
+      const candidate = fenced?.[1] ?? res.text;
       const start = candidate.indexOf("{");
       const end = candidate.lastIndexOf("}");
       const jsonText = start >= 0 && end > start ? candidate.slice(start, end + 1) : candidate;

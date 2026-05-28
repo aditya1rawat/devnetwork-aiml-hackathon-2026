@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,22 +9,25 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "devpass"
 
-    # Extraction + rerank provider for graphiti: "nim" | "crusoe".
-    # Both are OpenAI-compatible with large context and generous rate limits.
-    # Gemini (20 req/min) and Groq (12k TPM < graphiti's ~18k prompt) were
-    # removed: both rate-limited unusably on the free tier.
-    graphiti_llm_provider: str = "nim"
+    # Extraction + rerank provider for graphiti: "crusoe" (default) | "tfy".
+    # Crusoe (Nemotron Nano) is primary — generous limits, free, same model
+    # family as the conductor's shadow cognition. TFY gateway (Sonnet) is the
+    # backup if Crusoe is unreachable. NIM was tried first; its 40 RPM ceiling
+    # couldn't carry Graphiti's burst extraction pattern, removed.
+    graphiti_llm_provider: str = "crusoe"
 
-    # NVIDIA NIM (build.nvidia.com)
-    nvidia_api_key: str = ""
-    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
-    nvidia_model: str = "meta/llama-3.3-70b-instruct"
-    nvidia_rerank_model: str = "meta/llama-3.1-8b-instruct"
-
-    # Crusoe (alternate; already hosts Nemotron for the shadow agent)
+    # Crusoe (primary; also hosts Nemotron for the shadow agent)
     crusoe_api_key: str = ""
     crusoe_inference_url: str = "https://api.inference.crusoecloud.com/v1/"
-    crusoe_model: str = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+    crusoe_model: str = "nvidia/Nemotron-3-Nano-Omni-Reasoning-30B-A3B"
+
+    # TrueFoundry AI Gateway (backup). Aliased to read the existing
+    # TRUEFOUNDRY_* env vars shared with the orchestrator.
+    tfy_api_key: str = Field(default="", alias="TRUEFOUNDRY_API_KEY")
+    tfy_gateway_url: str = Field(
+        default="https://gateway.truefoundry.ai", alias="TRUEFOUNDRY_GATEWAY_URL"
+    )
+    tfy_model: str = Field(default="anthropic/claude-sonnet-4-6", alias="CLAUDE_MODEL")
 
     graphiti_embedder_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     graphiti_group_id: str = "argus_incidents"

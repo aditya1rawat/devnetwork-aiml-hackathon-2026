@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -34,6 +35,12 @@ class IncidentBundle(BaseModel):
     resolved_at: str
     services_touched: list[str]
     tool_log_digest: str
+    # Structured linking facts. When present, the extractor sees these (compact,
+    # few entities) instead of the full report — keeping ingest under the
+    # provider RPM limit. Optional so seeds / older callers still validate.
+    root_cause: str = ""
+    symptom: str = ""
+    summary: str = ""
     # "argus" = investigated live by this system, full event log exists.
     # "historical" = pre-Argus case, only the report + entity graph survive.
     provenance: str = "argus"
@@ -48,12 +55,40 @@ def validate_bundle(b: IncidentBundle) -> None:
         raise ValueError("report_md cannot be empty")
 
 
-def build_episode_body(b: IncidentBundle) -> str:
-    """Compose the episode body shown to Graphiti's extractor.
+# Cap the report text fed to the extractor. Graphiti only needs the salient
+# linking entities (service, root cause, remediation, symptom) to connect this
+# incident to others — not the full multi-section postmortem. The whole report
+# explodes extraction into ~100 LLM calls and trips the provider RPM limit; a
+# compact slice keeps it to ~10-15 calls. The FULL report is stored separately
+# on the Episodic node (e.report_md) for retrieval, so nothing is lost.
+_EXTRACTION_REPORT_CHARS = int(os.getenv("EXTRACTION_REPORT_CHARS", "700"))
 
-    Structured metadata is included as plain-text key=value lines so the
-    extractor picks them up; the markdown report is appended verbatim.
+
+def build_episode_body(b: IncidentBundle) -> str:
+    """Compose the COMPACT episode body shown to Graphiti's extractor.
+
+    We feed only the salient linking facts (service, root cause, symptom,
+    severity) — the entities that connect this incident to others. Graphiti
+    extracts ~4 clean nodes from this instead of mining ~100 from the full
+    prose report, keeping ingest under the provider RPM limit. The full report
+    is stored separately on the Episodic node (e.report_md) for retrieval.
+
+    Falls back to a truncated report when structured facts are absent (e.g.
+    seeds / older callers).
     """
+    if b.summary or b.root_cause:
+        gist = "\n".join(filter(None, [
+            f"root_cause={b.root_cause}" if b.root_cause else "",
+            f"symptom={b.symptom}" if b.symptom else "",
+            b.summary.strip(),
+        ]))
+    else:
+        report = b.report_md.strip()
+        gist = (
+            report[:_EXTRACTION_REPORT_CHARS].rstrip() + "\n…(truncated; full report stored separately)"
+            if len(report) > _EXTRACTION_REPORT_CHARS
+            else report
+        )
     lines = [
         f"incident_id={b.incident_id}",
         f"title={b.title}",
@@ -62,9 +97,8 @@ def build_episode_body(b: IncidentBundle) -> str:
         f"scenario={b.scenario or 'none'}",
         f"resolved_at={b.resolved_at}",
         f"services_touched={','.join(b.services_touched) if b.services_touched else 'none'}",
-        f"tool_log_digest={b.tool_log_digest}",
         "---",
-        b.report_md.strip(),
+        gist,
     ]
     return "\n".join(lines)
 
@@ -128,6 +162,19 @@ async def _set_episode_provenance(episode_name: str, provenance: str) -> None:
         await session.run(cypher, name=episode_name, gid=settings.graphiti_group_id, provenance=provenance)
 
 
+async def _set_episode_report(episode_name: str, report_md: str) -> None:
+    """Store the FULL report on the Episodic node for retrieval. The extractor
+    only saw a truncated slice, so the complete postmortem lives here."""
+    driver = await get_neo4j_driver()
+    cypher = """
+    MATCH (e:Episodic {name: $name, group_id: $gid})
+    WITH e ORDER BY e.created_at DESC LIMIT 1
+    SET e.report_md = $report
+    """
+    async with driver.session() as session:
+        await session.run(cypher, name=episode_name, gid=settings.graphiti_group_id, report=report_md)
+
+
 async def _run_ingest(b: IncidentBundle, job_id: str) -> None:
     g = await get_graphiti()
     name = f"incident:{b.incident_id}"
@@ -152,6 +199,7 @@ async def _run_ingest(b: IncidentBundle, job_id: str) -> None:
             # archive view distinguish Argus-resolved vs pre-Argus cases
             # without parsing it out of the body string.
             await _set_episode_provenance(name, b.provenance)
+            await _set_episode_report(name, b.report_md)
             log.info("ingest done: incident=%s job=%s provenance=%s", b.incident_id, job_id, b.provenance)
             return
         except Exception as e:

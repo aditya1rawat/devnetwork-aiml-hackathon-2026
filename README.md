@@ -59,7 +59,7 @@ Required keys in `.env.local`:
 
 - `TRUEFOUNDRY_API_KEY` — AI Gateway routing (Claude + Nemotron)
 - `ANTHROPIC_API_KEY` / `CRUSOE_API_KEY` — direct-mode fallback providers
-- `NVIDIA_API_KEY` — Graphiti entity extraction + rerank (default provider)
+- `CRUSOE_API_KEY` — Graphiti entity extraction + rerank (Nemotron, primary). TFY (Sonnet via `TRUEFOUNDRY_API_KEY`) is the configurable backup.
 - Neo4j defaults (`bolt://localhost:7687`, `neo4j` / `devpass`) work out of the box with the bundled Docker compose.
 
 ### Run the stack

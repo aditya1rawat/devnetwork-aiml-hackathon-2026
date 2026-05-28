@@ -26,6 +26,7 @@ async def fetch_incident_report(incident_id: str) -> dict[str, Any] | None:
     MATCH (e:Episodic {name: $name, group_id: $group_id})
     RETURN
       e.content AS content,
+      e.report_md AS report_md,
       toString(e.valid_at) AS valid_at,
       toString(e.created_at) AS created_at,
       e.source_description AS source_description,
@@ -40,7 +41,10 @@ async def fetch_incident_report(incident_id: str) -> dict[str, Any] | None:
         if record is None:
             return None
         content = record["content"] or ""
-        meta, report_md = _split_body(content)
+        meta, parsed_report = _split_body(content)
+        # Prefer the full report stored separately (new incidents feed Graphiti
+        # only a truncated slice); fall back to the body for seeds / older eps.
+        report_md = record["report_md"] or parsed_report
         meta["incident_id"] = incident_id
         meta["valid_at"] = record["valid_at"]
         meta["created_at"] = record["created_at"]
