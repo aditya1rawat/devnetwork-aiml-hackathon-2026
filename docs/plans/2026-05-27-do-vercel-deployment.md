@@ -1,6 +1,6 @@
 # DigitalOcean + Vercel deployment plan
 
-Status snapshot (2026-05-27): steps 1-3 + Dockerfiles for all three services are done and smoke-verified locally. Compose, Droplet provisioning, Caddy/TLS, and Vercel cutover remain.
+Status snapshot (2026-05-28): **DEPLOYED.** Both Vercel apps live at https://argus-sre.vercel.app and https://ridgeline-data.vercel.app; Droplet stack (orch + KB + cluster + Neo4j + Caddy) running at https://orch.64-23-239-2.sslip.io. End-to-end flow verified: trigger fault on Ridgeline → triage streams → click through to Argus → live SSE investigation → KB ingest counter → case-graph renders. KB pre-seeded with 14 historical incidents via local-to-Droplet `neo4j-admin dump` migration.
 
 ## Decisions locked
 
@@ -191,6 +191,22 @@ Trigger one resolved scenario from Ridgeline, one chaos-kill from Argus, one hal
 - **Neo4j initial seed**: after first Droplet bring-up, KB starts empty. Re-seed with `pnpm seed-kb` pointing at `https://orch.<domain>` (or run the seed script from inside the orch container).
 - **Mock cluster is demo-only**. It exposes chaos endpoints under `/chaos/*`. For a real production system this would be replaced with real observability MCP servers, but for the hackathon it's the demo's source of truth.
 - **No auth on orch.** CORS allowlist is the only access control. Anyone who knows the domain can `POST /chaos/*` and `POST /scenarios/:id/start`. Acceptable for a demo URL; not for production.
+
+## Gotchas hit during deploy (write-up for future runs)
+
+- **pnpm version drift.** Vercel's builder defaults to pnpm 10 by project creation date and ignores the `packageManager: pnpm@9.x` pin. Setting `ENABLE_EXPERIMENTAL_COREPACK=1` was acknowledged in the build log but didn't actually switch the runtime. Resolution: bump `packageManager` to `pnpm@10.0.0`; lockfile was format-compatible.
+- **Monorepo upload scoping.** With Root Directory set to `apps/web`, Vercel only uploads that subtree by default — the workspace-root `pnpm-lock.yaml` and `pnpm-workspace.yaml` never ship. Enable **Settings → General → Include source files outside of the Root Directory in the Build Step** and the install + build commands can `cd ../..`.
+- **Per-app `.vercel/` linking.** Local `vercel link` inside `apps/ridgeline` puts `.vercel/project.json` there, and the CLI then double-appends the server-side Root Directory (`apps/ridgeline/apps/ridgeline`). Cleanest path: use **GitHub-integrated auto-deploys** for both projects; `git push origin main` triggers both builds and there's no `.vercel/` swap dance.
+- **Path of least resistance with TLS.** sslip.io's wildcard DNS lets Caddy auto-provision Let's Encrypt for `<subdomain>.<dashed-ip>.sslip.io` without owning a domain. The Caddyfile just names the host; first request triggers ACME challenge.
+- **Neo4j 5 password length.** Default `devpass` (7 chars) is rejected by Neo4j 5; need ≥8. Use `devpass12` for local convenience or generate a real password in prod.
+- **Docker compose `${VAR}` interpolation.** Values containing `$` (e.g. Crusoe API keys) need `$$` escapes inside the env file used as `--env-file`, otherwise compose tries to interpolate them and you get a "variable not set" warning + a corrupted env value.
+- **Neo4j APOC plugin.** `case_graph.py` uses `apoc.path.subgraphAll()`. The `neo4j:5` image ships the APOC jar in `/var/lib/neo4j/labs/` but doesn't auto-load it. Set `NEO4J_PLUGINS=["apoc"]` + `NEO4J_dbms_security_procedures_unrestricted=apoc.*`.
+- **KB driver pool after Neo4j restart.** Recreating Neo4j leaves the KB container holding bolt connections to the dead instance ("OSError: No data"). Always `docker compose restart kb` after recreating neo4j.
+- **Orch healthcheck image dependencies.** `node:22-slim` has no `wget`/`curl`; use `node -e "fetch(...)"` for the healthcheck. Same for KB which is `python:3.13-slim` — use `python -c "urllib.request.urlopen(...)"`.
+- **CORS allowlist needs every Vercel hostname.** Triage works from `argus-sre.vercel.app` doesn't mean it works from `ridgeline-data.vercel.app`. List both in `CORS_ORIGINS`.
+- **Vercel's `.vercel.app` is taken.** Both `argus.vercel.app` and `ridgeline.vercel.app` were claimed. Final names: `argus-sre.vercel.app`, `ridgeline-data.vercel.app`.
+- **`NEXT_PUBLIC_*` is build-time.** Setting env vars in Vercel doesn't update a live build — must redeploy after each new var.
+- **Swap on a 2GB Droplet.** Docker builds (especially KB with torch + sentence-transformers) OOM on 2 GB without swap. Add 2 GB via `fallocate -l 2G /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab`.
 
 ## Future hardening (not in scope for hackathon)
 

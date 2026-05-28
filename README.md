@@ -6,6 +6,16 @@ Argus watches production for an on-call operator, reasons across two independent
 
 Built for the DevNetwork AI+ML Hackathon 2026.
 
+**Live demo:**
+
+| App | URL |
+|---|---|
+| Argus (investigation view) | https://argus-sre.vercel.app |
+| Ridgeline (product simulation) | https://ridgeline-data.vercel.app |
+| Orchestrator (backend, TLS-fronted) | https://orch.64-23-239-2.sslip.io |
+
+Frontends host on Vercel; the backend (orchestrator + KB + mock cluster + Neo4j) runs in `docker-compose` on a single DigitalOcean Droplet with Caddy fronting Let's Encrypt TLS.
+
 ---
 
 ## What it does
@@ -96,9 +106,9 @@ docs/             Specs, plans, demo scripts, Devpost submission
 
 ### Prerequisites
 
-- Node 22+ and [pnpm](https://pnpm.io) 9 (this is a pnpm workspace — use `pnpm`, not `npm`)
+- Node 22+ and [pnpm](https://pnpm.io) 10 (this is a pnpm workspace — use `pnpm`, not `npm`)
 - [uv](https://docs.astral.sh/uv/) for the Python services
-- Docker (for Neo4j)
+- Docker (for Neo4j, or for running the full stack via `docker-compose.prod.yml`)
 
 ### Setup
 
@@ -160,12 +170,29 @@ Ridgeline surface timers are page-scoped: navigate away before the fault fires a
 - **Bounded investigations.** The conductor caps at 14 steps with a final-step nudge that forces a partial-conclusion report — investigations resolve consistently rather than ending in an "incomplete" state.
 - **Live ingest progress.** While Graphiti is extracting entities for a resolved incident, the case-graph panel polls `/admin/ingest/status/{id}` and shows a live counter (extractions + elapsed) instead of a generic "seeding" spinner. A `↻` button next to the fullscreen toggle re-polls on demand.
 
+## Deployment
+
+The production stack is **Vercel + DigitalOcean**.
+
+- **Vercel** hosts both Next.js apps (`apps/web` → `argus-sre.vercel.app`, `apps/ridgeline` → `ridgeline-data.vercel.app`). Connected via GitHub auto-deploys; each project has its own Root Directory + workspace-aware build override.
+- **DigitalOcean Droplet** (2 vCPU / 2 GB / SFO3) runs the orchestrator, KB, mock cluster, Neo4j, and Caddy via `docker-compose.prod.yml`. Caddy auto-provisions Let's Encrypt TLS for `orch.64-23-239-2.sslip.io` (sslip.io wildcard DNS — no domain purchase). The orchestrator stays internal-only behind Caddy; the only public ports are 80/443.
+
+Operationally:
+
+- Orchestrator state (`apps/orchestrator/data/incidents/`) persists on a named docker volume, so an investigation survives container restarts and rehydrates the live view.
+- Neo4j runs with APOC enabled (`NEO4J_PLUGINS=["apoc"]`) — required because `case_graph.py` uses `apoc.path.subgraphAll()` for the bi-temporal neighborhood query.
+- CORS is allowlisted to the two Vercel origins via `CORS_ORIGINS` on the orchestrator (env-driven, see `apps/orchestrator/src/server.ts`).
+- All containers run with `restart: unless-stopped`, so a Droplet reboot brings the stack back without intervention.
+
+Step-by-step provisioning + cutover lives in [`docs/plans/2026-05-27-do-vercel-deployment.md`](docs/plans/2026-05-27-do-vercel-deployment.md).
+
 ## Built with
 
-Next.js 16, React 19, Hono, TrueFoundry AI Gateway, Crusoe Cloud Managed Inference, Nemotron, Claude, Model Context Protocol, Neo4j, Graphiti, FastAPI, TypeScript, Tailwind CSS, Python.
+Next.js 16, React 19, Hono, TrueFoundry AI Gateway, Crusoe Cloud Managed Inference, Nemotron, Claude, Model Context Protocol, Neo4j + APOC, Graphiti, FastAPI, Caddy, Docker Compose, DigitalOcean, Vercel, TypeScript, Tailwind CSS, Python.
 
 ## Project docs
 
 - [`PRODUCT.md`](PRODUCT.md) — product vision, brand, and design principles
 - [`docs/DEVPOST.md`](docs/DEVPOST.md) — hackathon submission
+- [`docs/plans/2026-05-27-do-vercel-deployment.md`](docs/plans/2026-05-27-do-vercel-deployment.md) — DO + Vercel deployment plan + status
 - [`docs/`](docs/) — specs, plans, and demo scripts

@@ -2,7 +2,9 @@
 
 A spoken-word runbook for the live demo. `[DO]` = what you click. `[SAY]` = what you say. Target length ~5–6 min. Trim acts 4–5 if you're short on time.
 
-> Three tabs open before you start: **Ridgeline** (`http://localhost:3001`), **Argus** (`http://localhost:3000/dashboard`), and **Neo4j Browser** (`http://localhost:7474`, run `MATCH (n)-[r]->(m) RETURN n, r, m` so the graph **with edges** is already rendered for Act 4.5). KB pre-seeded. Don't seed live.
+> Three tabs open before you start: **Ridgeline** (`https://ridgeline-data.vercel.app`), **Argus** (`https://argus-sre.vercel.app/dashboard`), and **Neo4j Browser** (`http://64.23.239.2:7474` if you've opened the port, otherwise have a pre-rendered screenshot of `MATCH (n)-[r]->(m) RETURN n, r, m` ready for Act 4.5). KB pre-seeded. Don't seed live.
+>
+> Backup if Vercel hits an issue mid-demo: spin up local frontends (`pnpm dev:web` + `pnpm dev:ridgeline`) — they point at the same Droplet-hosted orchestrator via `NEXT_PUBLIC_ORCH_URL`, so the investigation flow still works.
 
 ---
 
@@ -115,7 +117,7 @@ A spoken-word runbook for the live demo. `[DO]` = what you click. `[SAY]` = what
 - **Triage toast slow/errors:** "That's a live model call — it'll catch up. The full investigation is where the real work happens." Click through.
 - **Agent doesn't call the KB this run:** open a previously-resolved worker-oom incident from `/incidents` — its case graph is already rendered.
 - **Fault didn't fire on the surface:** Ridgeline timers are page-scoped; reload the page and stay on it, or use the ops board **inspect** link (boots straight into the error state).
-- **Everything's wedged:** open any surface with `?fault=1` (e.g. `localhost:3001/jobs?fault=1`) — instant pre-triggered state.
+- **Everything's wedged:** open any surface with `?fault=1` (e.g. `https://ridgeline-data.vercel.app/jobs?fault=1`) — instant pre-triggered state.
 
 ## Surface → scenario cheat sheet
 

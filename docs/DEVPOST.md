@@ -38,6 +38,7 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 - **Incident Knowledge Base** built on Python FastAPI, backed by Neo4j + Graphiti. Ontology: incidents → services → root causes → remediations, with bi-temporal edges. Graphiti's entity extraction + rerank run on Crusoe-hosted Nemotron Nano — the same model family as the shadow cognition — paced through a shared token-bucket limiter so live ingest stays well under provider RPM. Per-incident ingest state (queued / running / done / failed, extraction-call counter) is tracked via a `contextvars.ContextVar` hook on the rate-limited LLM client and surfaced through an admin `/admin/ingest/status/{id}` endpoint so the UI can render a live counter while Graphiti is writing. MCP tool for agent retrieval, admin API for ingest/seed/reset.
 - **Python FastAPI** mock service cluster (api / worker / db_proxy / auth) with chaos injection endpoints.
 - **Ridgeline app** with 4 surfaces (Overview dashboard, Sign In, Query Studio, Batch Jobs), each with an embedded fault trigger and Argus launcher overlay.
+- **Production deployment** on Vercel + a single DigitalOcean Droplet. Both Next.js apps deploy to Vercel via GitHub auto-deploys with Root Directory overrides for the pnpm workspace. The Hono orchestrator, KB, FastAPI cluster, Neo4j (with APOC), and Caddy run together in `docker-compose.prod.yml` on the Droplet — Caddy fronts everything with auto-provisioned Let's Encrypt TLS, and the orchestrator stays internal-only behind it.
 
 ### Challenges we ran into
 
@@ -46,6 +47,7 @@ Argus is an autonomous on-call SRE agent that investigates live incidents while 
 - Mid-flight failover. Initially a kill-provider chaos action only blocked the next call, so the current step still finished on the dying provider. We added an `AbortController` per in-flight chat call inside the gateway, and `setProviderBlocked` now aborts the controllers — failover takes effect mid-step, the way it would in a real outage.
 - Knowledge graph ingest: Graphiti's entity extraction needs a high-throughput LLM, and we tried four. Gemini (20 RPM) and Groq (12k TPM under Graphiti's ~18k prompt) were rate-limited unusably. NVIDIA NIM (llama-3.3-70b) worked for seed ingest but its 40 RPM ceiling couldn't carry a live incident's ~100-call extraction burst even after we added a token-bucket limiter, retry-stripping, and a compact-payload rewrite. We finally moved extraction and reranking to Crusoe Cloud Managed Inference running NVIDIA Nemotron-3-Nano-Omni-Reasoning — the same model family already hosting the shadow cognition — and live ingest now completes in seconds.
 - Two-brand visual design: Argus (cool violet, serif italic) and Ridgeline (warm green, monospace) needed to be instantly distinguishable side-by-side while both looking like real products.
+- Cross-host production deploy: getting a pnpm monorepo onto Vercel + Docker on a 2GB Droplet meant aligning Vercel's pnpm version with the lockfile, baking workspace-wide installs into per-app builds via Vercel "include files outside" + custom build commands, terminating TLS with Caddy + sslip.io to avoid buying a domain, and turning on Neo4j's APOC plugin so `case_graph.py` could resolve `apoc.path.subgraphAll`.
 
 ### Accomplishments we're proud of
 
@@ -95,7 +97,11 @@ Next.js 16, React 19, Hono, TrueFoundry AI Gateway, Crusoe Cloud Managed Inferen
 
 ## g. Try It Out
 
-- GitHub: [link]
+- **Live Argus** (investigation view) — https://argus-sre.vercel.app
+- **Live Ridgeline** (product simulation; triggers the demo scenarios) — https://ridgeline-data.vercel.app
+- **GitHub** — https://github.com/aditya1rawat/devnetwork-aiml-hackathon-2026
+
+Both frontends are hosted on Vercel; the dual-cognition orchestrator, MCP servers, FastAPI knowledge base (Neo4j + Graphiti), mock service cluster, and Caddy TLS reverse proxy run side-by-side on a single DigitalOcean Droplet via `docker-compose.prod.yml`. Caddy auto-provisions Let's Encrypt for `orch.64-23-239-2.sslip.io`. Provisioning runbook lives at [`docs/plans/2026-05-27-do-vercel-deployment.md`](https://github.com/aditya1rawat/devnetwork-aiml-hackathon-2026/blob/main/docs/plans/2026-05-27-do-vercel-deployment.md).
 
 ## h. Video Demo
 
